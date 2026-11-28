@@ -1,0 +1,1094 @@
+import "ccam_core.cap";
+
+// Independent exact results, all three destination aliases, all six fuel prefixes.
+bool assurance_dispatch_case(int op, int a, int b, int want, string trap) {
+    for (int dst = 0; dst < 3; dst += 1) {
+        for (int fuel = 0; fuel <= 5; fuel += 1) {
+            List<int> types = new List<int>();
+            types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_INT);
+            List<CCAMInstruction> code = new List<CCAMInstruction>();
+            CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+            i.dst = 0; i.int_value = a; code.push(i);
+            i = ccam_instruction(CCAM_OP_CONST_I);
+            i.dst = 1; i.int_value = b; code.push(i);
+            i = ccam_instruction(CCAM_OP_CONST_I);
+            i.dst = 2; i.int_value = 73; code.push(i);
+            i = ccam_instruction(op);
+            i.dst = dst; i.lhs = 0; i.rhs = 1; code.push(i);
+            i = ccam_instruction(CCAM_OP_RET);
+            i.lhs = dst; code.push(i);
+            CCAMMachineCreateResult created = ccam_machine_create_validated(types, code, fuel, CCAM_RETURN_INT);
+            if (!created.ok) { return false; }
+            CCAMMachineState state = created.state;
+            for (int n = 0; n < 6; n += 1) { ccam_machine_step(state); }
+            string expected = "step_limit_exceeded";
+            int steps = fuel;
+            int pc = fuel;
+            bool computed = fuel >= 4 && trap == "";
+            bool returned = computed && fuel == 5;
+            if (fuel >= 4 && trap != "") {
+                expected = trap; steps = 4; pc = 3;
+            } else if (returned) {
+                expected = ""; pc = 4;
+            }
+            if (!state.halted || state.steps != steps || state.pc != pc ||
+                state.trap_code != expected || state.halt_has_value != returned) { return false; }
+            if (returned && state.halt_value != want) { return false; }
+            for (int r = 0; r < 3; r += 1) {
+                bool initialized = fuel > r;
+                int value = 73;
+                if (r == 0) { value = a; }
+                if (r == 1) { value = b; }
+                if (computed && r == dst) { value = want; }
+                CCAMRegisterResult read = ccam_register_read_int(state.registers, r);
+                if (read.ok != initialized) { return false; }
+                if (initialized && read.int_value != value) { return false; }
+                if (!initialized && read.trap != "uninitialised_register") { return false; }
+            }
+            if (state.output_bytes.len() != 0) { return false; }
+            ccam_machine_step(state);
+            if (state.steps != steps || state.pc != pc || state.trap_code != expected) { return false; }
+        }
+    }
+    return true;
+}
+
+test "dispatch add alias and fuel row 0" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, -1, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, 0, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, 1, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, 2, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, 3037000499, -9223372033817775309, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, 3037000500, -9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, 9223372036854775806, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MIN, CCAM_I64_MAX, -1, ""));
+}
+
+test "dispatch add alias and fuel row 1" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, -1, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, 0, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, 1, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, 2, -9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, 3037000499, -9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, 3037000500, -9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, 9223372036854775806, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -9223372036854775807, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch add alias and fuel row 2" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, -3037000500, -6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, -3037000499, -6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, -2, -3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, -1, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, 0, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, 1, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, 2, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, 3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, 9223372036854775806, 9223372033817775306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000500, CCAM_I64_MAX, 9223372033817775307, ""));
+}
+
+test "dispatch add alias and fuel row 3" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, -3037000500, -6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, -3037000499, -6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, -2, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, -1, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, 0, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, 1, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, 2, -3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, 3037000500, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, 9223372036854775806, 9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -3037000499, CCAM_I64_MAX, 9223372033817775308, ""));
+}
+
+test "dispatch add alias and fuel row 4" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, -3037000500, -3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, -3037000499, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, -2, -4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, -1, -3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, 0, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, 1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, 3037000499, 3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, 3037000500, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, 9223372036854775806, 9223372036854775804, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -2, CCAM_I64_MAX, 9223372036854775805, ""));
+}
+
+test "dispatch add alias and fuel row 5" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, -9223372036854775807, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, -3037000500, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, -3037000499, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, -2, -3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, -1, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, 0, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, 2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, 3037000499, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, 3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, 9223372036854775806, 9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, -1, CCAM_I64_MAX, 9223372036854775806, ""));
+}
+
+test "dispatch add alias and fuel row 6" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, CCAM_I64_MIN, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, -9223372036854775807, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, -3037000500, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, -3037000499, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, -2, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, -1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, 1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, 2, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, 3037000499, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, 3037000500, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, 9223372036854775806, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 0, CCAM_I64_MAX, CCAM_I64_MAX, ""));
+}
+
+test "dispatch add alias and fuel row 7" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, CCAM_I64_MIN, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, -9223372036854775807, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, -3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, -3037000499, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, -2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, 0, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, 1, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, 2, 3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, 3037000499, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, 3037000500, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, 9223372036854775806, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 1, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch add alias and fuel row 8" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, CCAM_I64_MIN, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, -9223372036854775807, -9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, -3037000500, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, -3037000499, -3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, -1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, 0, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, 1, 3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, 2, 4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, 3037000499, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, 3037000500, 3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 2, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch add alias and fuel row 9" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, CCAM_I64_MIN, -9223372033817775309, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, -9223372036854775807, -9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, -3037000500, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, -2, 3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, -1, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, 0, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, 1, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, 2, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, 3037000499, 6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, 3037000500, 6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000499, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch add alias and fuel row 10" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, CCAM_I64_MIN, -9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, -9223372036854775807, -9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, -3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, -2, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, -1, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, 0, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, 1, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, 2, 3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, 3037000499, 6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, 3037000500, 6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 3037000500, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch add alias and fuel row 11" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, CCAM_I64_MIN, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, -9223372036854775807, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, -3037000500, 9223372033817775306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, -3037000499, 9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, -2, 9223372036854775804, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, -1, 9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, 0, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, 1, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, 9223372036854775806, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch add alias and fuel row 12" {
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, CCAM_I64_MIN, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, -3037000500, 9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, -3037000499, 9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, -2, 9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, -1, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, 0, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, 1, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_ADD_I, CCAM_I64_MAX, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch sub alias and fuel row 0" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, -9223372036854775807, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, -3037000500, -9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, -3037000499, -9223372033817775309, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, -2, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, -1, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, 0, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, 1, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MIN, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch sub alias and fuel row 1" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, CCAM_I64_MIN, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, -3037000500, -9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, -3037000499, -9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, -2, -9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, -1, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, 0, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, 1, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -9223372036854775807, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch sub alias and fuel row 2" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, CCAM_I64_MIN, 9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, -9223372036854775807, 9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, -3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, -2, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, -1, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, 0, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, 1, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, 2, -3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, 3037000499, -6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, 3037000500, -6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000500, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch sub alias and fuel row 3" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, CCAM_I64_MIN, 9223372033817775309, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, -9223372036854775807, 9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, -3037000500, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, -2, -3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, -1, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, 0, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, 1, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, 2, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, 3037000499, -6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, 3037000500, -6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -3037000499, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch sub alias and fuel row 4" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, CCAM_I64_MIN, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, -9223372036854775807, 9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, -3037000500, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, -3037000499, 3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, -1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, 0, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, 1, -3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, 2, -4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, 3037000499, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, 3037000500, -3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, 9223372036854775806, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -2, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch sub alias and fuel row 5" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, CCAM_I64_MIN, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, -9223372036854775807, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, -3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, -3037000499, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, -2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, 0, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, 1, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, 2, -3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, 3037000499, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, 3037000500, -3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, 9223372036854775806, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, -1, CCAM_I64_MAX, CCAM_I64_MIN, ""));
+}
+
+test "dispatch sub alias and fuel row 6" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, -9223372036854775807, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, -3037000500, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, -3037000499, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, -2, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, -1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, 1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, 2, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, 3037000499, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, 3037000500, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, 9223372036854775806, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 0, CCAM_I64_MAX, -9223372036854775807, ""));
+}
+
+test "dispatch sub alias and fuel row 7" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, -3037000500, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, -3037000499, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, -2, 3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, -1, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, 0, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, 2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, 3037000499, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, 3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, 9223372036854775806, -9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 1, CCAM_I64_MAX, -9223372036854775806, ""));
+}
+
+test "dispatch sub alias and fuel row 8" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, -3037000500, 3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, -3037000499, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, -2, 4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, -1, 3, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, 0, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, 1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, 3037000499, -3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, 3037000500, -3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, 9223372036854775806, -9223372036854775804, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 2, CCAM_I64_MAX, -9223372036854775805, ""));
+}
+
+test "dispatch sub alias and fuel row 9" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, -3037000500, 6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, -3037000499, 6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, -2, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, -1, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, 0, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, 1, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, 2, 3037000497, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, 3037000500, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, 9223372036854775806, -9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000499, CCAM_I64_MAX, -9223372033817775308, ""));
+}
+
+test "dispatch sub alias and fuel row 10" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, -3037000500, 6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, -3037000499, 6074000999, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, -2, 3037000502, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, -1, 3037000501, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, 0, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, 1, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, 2, 3037000498, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, 3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, 9223372036854775806, -9223372033817775306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 3037000500, CCAM_I64_MAX, -9223372033817775307, ""));
+}
+
+test "dispatch sub alias and fuel row 11" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, -1, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, 0, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, 1, 9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, 2, 9223372036854775804, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, 3037000499, 9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, 3037000500, 9223372033817775306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, 9223372036854775806, CCAM_I64_MAX, -1, ""));
+}
+
+test "dispatch sub alias and fuel row 12" {
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, -1, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, 0, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, 1, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, 2, 9223372036854775805, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, 3037000499, 9223372033817775308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, 3037000500, 9223372033817775307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, 9223372036854775806, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_SUB_I, CCAM_I64_MAX, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch mul alias and fuel row 0" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, -1, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, 1, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MIN, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 1" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, -1, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, 1, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -9223372036854775807, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 2" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, -3037000499, 9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, -2, 6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, -1, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, 1, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, 2, -6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, 3037000499, -9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000500, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 3" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, -3037000500, 9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, -3037000499, 9223372030926249001, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, -2, 6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, -1, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, 1, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, 2, -6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, 3037000499, -9223372030926249001, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, 3037000500, -9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -3037000499, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 4" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, -3037000500, 6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, -3037000499, 6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, -2, 4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, -1, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, 1, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, 2, -4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, 3037000499, -6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, 3037000500, -6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -2, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 5" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, -9223372036854775807, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, -3037000500, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, -3037000499, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, -2, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, -1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, 1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, 2, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, 3037000499, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, 3037000500, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, 9223372036854775806, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, -1, CCAM_I64_MAX, -9223372036854775807, ""));
+}
+
+test "dispatch mul alias and fuel row 6" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 0, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch mul alias and fuel row 7" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, CCAM_I64_MIN, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, -9223372036854775807, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, -3037000500, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, -3037000499, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, -2, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, -1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, 1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, 2, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, 3037000499, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, 3037000500, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, 9223372036854775806, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 1, CCAM_I64_MAX, CCAM_I64_MAX, ""));
+}
+
+test "dispatch mul alias and fuel row 8" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, -3037000500, -6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, -3037000499, -6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, -2, -4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, -1, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, 1, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, 2, 4, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, 3037000499, 6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, 3037000500, 6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 2, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 9" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, -3037000500, -9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, -3037000499, -9223372030926249001, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, -2, -6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, -1, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, 1, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, 2, 6074000998, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, 3037000499, 9223372030926249001, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, 3037000500, 9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000499, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 10" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, -3037000499, -9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, -2, -6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, -1, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, 1, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, 2, 6074001000, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, 3037000499, 9223372033963249500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 3037000500, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 11" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, -1, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, 1, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, 9223372036854775806, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch mul alias and fuel row 12" {
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, CCAM_I64_MIN, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, -9223372036854775807, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, -3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, -3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, -2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, -1, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, 0, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, 1, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, 2, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, 3037000499, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, 3037000500, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, 9223372036854775806, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_MUL_I, CCAM_I64_MAX, CCAM_I64_MAX, 0, "integer_overflow"));
+}
+
+test "dispatch div alias and fuel row 0" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, CCAM_I64_MIN, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, -9223372036854775807, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, -3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, -3037000499, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, -2, 4611686018427387904, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, -1, 0, "integer_overflow"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, 1, CCAM_I64_MIN, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, 2, -4611686018427387904, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, 3037000499, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, 3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, 9223372036854775806, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MIN, CCAM_I64_MAX, -1, ""));
+}
+
+test "dispatch div alias and fuel row 1" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, -9223372036854775807, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, -3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, -3037000499, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, -2, 4611686018427387903, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, -1, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, 1, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, 2, -4611686018427387903, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, 3037000499, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, 3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, 9223372036854775806, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -9223372036854775807, CCAM_I64_MAX, -1, ""));
+}
+
+test "dispatch div alias and fuel row 2" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, -3037000500, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, -3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, -2, 1518500250, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, -1, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, 1, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, 2, -1518500250, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, 3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, 3037000500, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000500, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 3" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, -3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, -2, 1518500249, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, -1, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, 1, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, 2, -1518500249, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, 3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -3037000499, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 4" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, -2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, -1, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, 1, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, 2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -2, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 5" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, -1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, 1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, -1, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 6" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 0, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 7" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, -1, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, 1, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 1, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 8" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, -2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, -1, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, 1, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, 2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 2, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 9" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, -3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, -2, -1518500249, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, -1, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, 1, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, 2, 1518500249, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, 3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000499, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 10" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, -3037000500, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, -3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, -2, -1518500250, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, -1, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, 1, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, 2, 1518500250, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, 3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, 3037000500, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 3037000500, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 11" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, -3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, -3037000499, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, -2, -4611686018427387903, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, -1, -9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, 1, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, 2, 4611686018427387903, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, 3037000499, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, 3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, 9223372036854775806, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, 9223372036854775806, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch div alias and fuel row 12" {
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, -9223372036854775807, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, -3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, -3037000499, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, -2, -4611686018427387903, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, -1, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, 1, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, 2, 4611686018427387903, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, 3037000499, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, 3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, 9223372036854775806, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_DIV_I, CCAM_I64_MAX, CCAM_I64_MAX, 1, ""));
+}
+
+test "dispatch rem alias and fuel row 0" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, -9223372036854775807, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, -3037000500, -2891526308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, -3037000499, -2891526308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, 3037000499, -2891526308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, 3037000500, -2891526308, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, 9223372036854775806, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MIN, CCAM_I64_MAX, -1, ""));
+}
+
+test "dispatch rem alias and fuel row 1" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, CCAM_I64_MIN, -9223372036854775807, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, -3037000500, -2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, -3037000499, -2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, -2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, 2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, 3037000499, -2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, 3037000500, -2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, 9223372036854775806, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -9223372036854775807, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch rem alias and fuel row 2" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, CCAM_I64_MIN, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, -9223372036854775807, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, -3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, 3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, 9223372036854775806, -3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000500, CCAM_I64_MAX, -3037000500, ""));
+}
+
+test "dispatch rem alias and fuel row 3" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, CCAM_I64_MIN, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, -9223372036854775807, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, -3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, -2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, 2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, 3037000500, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, 9223372036854775806, -3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -3037000499, CCAM_I64_MAX, -3037000499, ""));
+}
+
+test "dispatch rem alias and fuel row 4" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, CCAM_I64_MIN, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, -9223372036854775807, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, -3037000500, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, -3037000499, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, 3037000499, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, 3037000500, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, 9223372036854775806, -2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -2, CCAM_I64_MAX, -2, ""));
+}
+
+test "dispatch rem alias and fuel row 5" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, CCAM_I64_MIN, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, -9223372036854775807, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, -3037000500, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, -3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, -2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, 2, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, 3037000499, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, 3037000500, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, 9223372036854775806, -1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, -1, CCAM_I64_MAX, -1, ""));
+}
+
+test "dispatch rem alias and fuel row 6" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, CCAM_I64_MIN, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 0, CCAM_I64_MAX, 0, ""));
+}
+
+test "dispatch rem alias and fuel row 7" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, CCAM_I64_MIN, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, -9223372036854775807, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, -3037000500, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, -3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, -2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, 2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, 3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, 3037000500, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, 9223372036854775806, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 1, CCAM_I64_MAX, 1, ""));
+}
+
+test "dispatch rem alias and fuel row 8" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, CCAM_I64_MIN, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, -9223372036854775807, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, -3037000500, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, -3037000499, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, 3037000499, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, 3037000500, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, 9223372036854775806, 2, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 2, CCAM_I64_MAX, 2, ""));
+}
+
+test "dispatch rem alias and fuel row 9" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, CCAM_I64_MIN, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, -9223372036854775807, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, -3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, -3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, -2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, 2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, 3037000499, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, 3037000500, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, 9223372036854775806, 3037000499, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000499, CCAM_I64_MAX, 3037000499, ""));
+}
+
+test "dispatch rem alias and fuel row 10" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, CCAM_I64_MIN, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, -9223372036854775807, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, -3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, -3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, 3037000499, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, 3037000500, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, 9223372036854775806, 3037000500, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 3037000500, CCAM_I64_MAX, 3037000500, ""));
+}
+
+test "dispatch rem alias and fuel row 11" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, CCAM_I64_MIN, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, -9223372036854775807, 9223372036854775806, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, -3037000500, 2891526306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, -3037000499, 2891526306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, -2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, 2, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, 3037000499, 2891526306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, 3037000500, 2891526306, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, 9223372036854775806, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, 9223372036854775806, CCAM_I64_MAX, 9223372036854775806, ""));
+}
+
+test "dispatch rem alias and fuel row 12" {
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, CCAM_I64_MIN, CCAM_I64_MAX, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, -9223372036854775807, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, -3037000500, 2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, -3037000499, 2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, -2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, -1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, 0, 0, "division_by_zero"));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, 1, 0, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, 2, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, 3037000499, 2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, 3037000500, 2891526307, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, 9223372036854775806, 1, ""));
+    assert(assurance_dispatch_case(CCAM_OP_REM_I, CCAM_I64_MAX, CCAM_I64_MAX, 0, ""));
+}
