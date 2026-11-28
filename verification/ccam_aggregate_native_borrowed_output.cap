@@ -1,0 +1,71 @@
+// Candidate Linux x86-64 borrowed regular-file FD output, NOT write_file.
+// RAX=trusted immutable string handle, R8=caller-authorised fd, R9=limit.
+// R12/R13/R14=trusted live record-stride arena; valid stack (4288 bytes
+// scratch plus call returns), exclusive arena/FD identity and flags required.
+// Membership, exact trusted string tag 4096, size 0..4096, readiness and
+// canonical byte values all checked before output. Tainted tag rejected.
+// F_GETFL rejects append, nonblocking, direct and O_PATH; fstat requires
+// regular file. pwrite64 from offset zero, no seek/open/close/truncate.
+// RAX=bytes actually written, RDX=0 on complete success, 1 on rejection
+// or short-write failure. File changes cannot be rolled back; suffix is
+// retained. No durability or concurrent-writer guarantees. No arena writes.
+// Positive writes advance offset, bounded syscall count; no wall-clock bound.
+// RBX/RBP/R12-R15 preserved. Trusted caller must prevent descriptor/flag
+// races. No source opcode, authority acquisition or canonical ABI claim.
+import "ccam_aggregate_native_record_boundary.cap";
+
+const int AG_NATIVE_FD_OUTPUT_SIZE = 316 + AG_NATIVE_RECORD_BOUNDARY_SIZE;
+
+bool ag_native_emit_borrowed_fd_output(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - AG_NATIVE_FD_OUTPUT_SIZE) { return false; }
+    b.push(73); b.push(129); b.push(248); b.push(255); b.push(255); b.push(255); b.push(127); b.push(15);
+    b.push(135); b.push(39); b.push(1); b.push(0); b.push(0); b.push(73); b.push(129); b.push(249);
+    b.push(0); b.push(16); b.push(0); b.push(0); b.push(15); b.push(135); b.push(26); b.push(1);
+    b.push(0); b.push(0); b.push(232); b.push(29); b.push(1); b.push(0); b.push(0); b.push(133);
+    b.push(210); b.push(15); b.push(133); b.push(13); b.push(1); b.push(0); b.push(0); b.push(77);
+    b.push(141); b.push(20); b.push(4); b.push(73); b.push(129); b.push(58); b.push(0); b.push(16);
+    b.push(0); b.push(0); b.push(15); b.push(133); b.push(252); b.push(0); b.push(0); b.push(0);
+    b.push(73); b.push(139); b.push(74); b.push(8); b.push(76); b.push(57); b.push(201); b.push(15);
+    b.push(135); b.push(239); b.push(0); b.push(0); b.push(0); b.push(72); b.push(129); b.push(236);
+    b.push(192); b.push(16); b.push(0); b.push(0); b.push(76); b.push(137); b.push(4); b.push(36);
+    b.push(72); b.push(137); b.push(76); b.push(36); b.push(8); b.push(72); b.push(199); b.push(68);
+    b.push(36); b.push(16); b.push(0); b.push(0); b.push(0); b.push(0); b.push(73); b.push(141);
+    b.push(114); b.push(16); b.push(72); b.push(141); b.push(188); b.push(36); b.push(192); b.push(0);
+    b.push(0); b.push(0); b.push(72); b.push(133); b.push(201); b.push(116); b.push(40); b.push(72);
+    b.push(131); b.push(126); b.push(8); b.push(1); b.push(15); b.push(133); b.push(168); b.push(0);
+    b.push(0); b.push(0); b.push(72); b.push(139); b.push(6); b.push(72); b.push(61); b.push(255);
+    b.push(0); b.push(0); b.push(0); b.push(15); b.push(135); b.push(153); b.push(0); b.push(0);
+    b.push(0); b.push(136); b.push(7); b.push(72); b.push(131); b.push(198); b.push(16); b.push(72);
+    b.push(255); b.push(199); b.push(72); b.push(255); b.push(201); b.push(117); b.push(216); b.push(72);
+    b.push(139); b.push(60); b.push(36); b.push(190); b.push(3); b.push(0); b.push(0); b.push(0);
+    b.push(184); b.push(72); b.push(0); b.push(0); b.push(0); b.push(15); b.push(5); b.push(72);
+    b.push(133); b.push(192); b.push(120); b.push(118); b.push(169); b.push(0); b.push(76); b.push(32);
+    b.push(0); b.push(117); b.push(111); b.push(131); b.push(224); b.push(3); b.push(131); b.push(248);
+    b.push(1); b.push(116); b.push(5); b.push(131); b.push(248); b.push(2); b.push(117); b.push(98);
+    b.push(72); b.push(139); b.push(60); b.push(36); b.push(72); b.push(141); b.push(116); b.push(36);
+    b.push(32); b.push(184); b.push(5); b.push(0); b.push(0); b.push(0); b.push(15); b.push(5);
+    b.push(72); b.push(133); b.push(192); b.push(117); b.push(77); b.push(139); b.push(68); b.push(36);
+    b.push(56); b.push(37); b.push(0); b.push(240); b.push(0); b.push(0); b.push(61); b.push(0);
+    b.push(128); b.push(0); b.push(0); b.push(117); b.push(61); b.push(76); b.push(139); b.push(84);
+    b.push(36); b.push(16); b.push(72); b.push(139); b.push(84); b.push(36); b.push(8); b.push(76);
+    b.push(41); b.push(210); b.push(116); b.push(31); b.push(72); b.push(139); b.push(60); b.push(36);
+    b.push(74); b.push(141); b.push(180); b.push(20); b.push(192); b.push(0); b.push(0); b.push(0);
+    b.push(184); b.push(18); b.push(0); b.push(0); b.push(0); b.push(15); b.push(5); b.push(72);
+    b.push(133); b.push(192); b.push(126); b.push(22); b.push(72); b.push(1); b.push(68); b.push(36);
+    b.push(16); b.push(235); b.push(210); b.push(72); b.push(139); b.push(68); b.push(36); b.push(16);
+    b.push(49); b.push(210); b.push(72); b.push(129); b.push(196); b.push(192); b.push(16); b.push(0);
+    b.push(0); b.push(195); b.push(72); b.push(139); b.push(68); b.push(36); b.push(16); b.push(186);
+    b.push(1); b.push(0); b.push(0); b.push(0); b.push(72); b.push(129); b.push(196); b.push(192);
+    b.push(16); b.push(0); b.push(0); b.push(195); b.push(49); b.push(192); b.push(186); b.push(1);
+    b.push(0); b.push(0); b.push(0); b.push(195);
+    return ag_native_emit_record_boundary(b);
+}
+
+test "borrowed FD output emission is bounded and exact" {
+    List<int> b = new List<int>();
+    assert(ag_native_emit_borrowed_fd_output(b));
+    assert(b.len() == 494);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-borrowed-fd-output.bin", data));
+}

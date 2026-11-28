@@ -1,0 +1,64 @@
+// Linux x86-64 opt-in indexed arena lifecycle; private trusted ABI.
+// Init RAX=capacity (1024-byte multiple, 1 KiB..64 MiB); R12/R13/R14/
+// RDI/RSI must all be zero. One private anonymous RW mmap, no executable
+// pages. Logical arena and bitmap occupy disjoint contiguous regions.
+// Success RAX=R12=base, R13=0, R14=capacity, RDI=base+capacity,
+// RSI=capacity/128, RDX=0. Kernel zero-initialises both regions.
+// Release requires those exact live, exclusively owned mapping identities;
+// checks numerical layout, not ownership. One munmap covers both regions;
+// on success all five metadata registers cleared. Invalid state or syscall
+// failure returns RAX=0/RDX=1, preserves original metadata.
+// Linux rounds mapping length up to pages. Logical limits exclude padding.
+// No mixing with unindexed allocators, concurrent access, GC or canonical ABI.
+import "ccam_aggregate_native_indexed_arena.cap";
+
+const int AG_INDEXED_LIFECYCLE_RELEASE_OFFSET = 144;
+const int AG_INDEXED_LIFECYCLE_SIZE = 265;
+
+bool ag_native_emit_indexed_lifecycle(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - AG_INDEXED_LIFECYCLE_SIZE) { return false; }
+    b.push(76); b.push(137); b.push(225); b.push(76); b.push(9); b.push(233); b.push(76); b.push(9);
+    b.push(241); b.push(72); b.push(9); b.push(249); b.push(72); b.push(9); b.push(241); b.push(117);
+    b.push(119); b.push(72); b.push(133); b.push(192); b.push(116); b.push(114); b.push(72); b.push(169);
+    b.push(255); b.push(3); b.push(0); b.push(0); b.push(117); b.push(106); b.push(72); b.push(61);
+    b.push(0); b.push(0); b.push(0); b.push(4); b.push(119); b.push(98); b.push(80); b.push(72);
+    b.push(137); b.push(198); b.push(72); b.push(193); b.push(232); b.push(7); b.push(72); b.push(1);
+    b.push(198); b.push(49); b.push(255); b.push(186); b.push(3); b.push(0); b.push(0); b.push(0);
+    b.push(65); b.push(186); b.push(34); b.push(0); b.push(0); b.push(0); b.push(73); b.push(199);
+    b.push(192); b.push(255); b.push(255); b.push(255); b.push(255); b.push(69); b.push(49); b.push(201);
+    b.push(184); b.push(9); b.push(0); b.push(0); b.push(0); b.push(15); b.push(5); b.push(90);
+    b.push(72); b.push(61); b.push(1); b.push(240); b.push(255); b.push(255); b.push(115); b.push(44);
+    b.push(72); b.push(133); b.push(192); b.push(116); b.push(20); b.push(73); b.push(137); b.push(196);
+    b.push(73); b.push(137); b.push(214); b.push(75); b.push(141); b.push(60); b.push(52); b.push(76);
+    b.push(137); b.push(246); b.push(72); b.push(193); b.push(238); b.push(7); b.push(49); b.push(210);
+    b.push(195); b.push(72); b.push(137); b.push(214); b.push(72); b.push(193); b.push(234); b.push(7);
+    b.push(72); b.push(1); b.push(214); b.push(49); b.push(255); b.push(184); b.push(11); b.push(0);
+    b.push(0); b.push(0); b.push(15); b.push(5); b.push(49); b.push(255); b.push(49); b.push(246);
+    b.push(49); b.push(192); b.push(186); b.push(1); b.push(0); b.push(0); b.push(0); b.push(195);
+    b.push(77); b.push(133); b.push(228); b.push(116); b.push(243); b.push(73); b.push(247); b.push(196);
+    b.push(255); b.push(15); b.push(0); b.push(0); b.push(117); b.push(234); b.push(77); b.push(133);
+    b.push(246); b.push(116); b.push(229); b.push(73); b.push(247); b.push(198); b.push(255); b.push(3);
+    b.push(0); b.push(0); b.push(117); b.push(220); b.push(73); b.push(129); b.push(254); b.push(0);
+    b.push(0); b.push(0); b.push(4); b.push(119); b.push(211); b.push(77); b.push(57); b.push(245);
+    b.push(119); b.push(206); b.push(73); b.push(247); b.push(197); b.push(15); b.push(0); b.push(0);
+    b.push(0); b.push(117); b.push(197); b.push(76); b.push(137); b.push(225); b.push(76); b.push(1);
+    b.push(241); b.push(114); b.push(189); b.push(72); b.push(57); b.push(207); b.push(117); b.push(184);
+    b.push(76); b.push(137); b.push(241); b.push(72); b.push(193); b.push(233); b.push(7); b.push(72);
+    b.push(57); b.push(206); b.push(117); b.push(172); b.push(72); b.push(1); b.push(249); b.push(114);
+    b.push(167); b.push(87); b.push(86); b.push(76); b.push(137); b.push(231); b.push(76); b.push(1);
+    b.push(246); b.push(184); b.push(11); b.push(0); b.push(0); b.push(0); b.push(15); b.push(5);
+    b.push(94); b.push(95); b.push(72); b.push(133); b.push(192); b.push(117); b.push(145); b.push(69);
+    b.push(49); b.push(228); b.push(69); b.push(49); b.push(237); b.push(69); b.push(49); b.push(246);
+    b.push(49); b.push(255); b.push(49); b.push(246); b.push(49); b.push(192); b.push(49); b.push(210);
+    b.push(195);
+    return true;
+}
+
+test "indexed arena lifecycle and allocator emit exact leaf lengths" {
+    List<int> b = new List<int>();
+    assert(ag_native_emit_indexed_lifecycle(b));
+    assert(b.len() == 265 && AG_INDEXED_LIFECYCLE_RELEASE_OFFSET == 144);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-indexed-lifecycle.bin", data));
+}

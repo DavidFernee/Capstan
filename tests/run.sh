@@ -166,6 +166,76 @@ else
   bad "bounded native record membership guard emission" "$out"
 fi
 
+section "Candidate native indexed arena"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_arena.cap" 2>&1)"; then
+  ok "indexed arena allocation and membership emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_arena.py" "$ROOT/build/ccam-native-indexed-arena.bin" 2>&1)"; then
+      ok "native indexed arena capacity and membership execution"
+    else
+      bad "native indexed arena execution" "$out"
+    fi
+  fi
+else
+  bad "indexed arena emission" "$out"
+fi
+
+section "Candidate native indexed arena lifecycle"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_lifecycle.cap" 2>&1)"; then
+  ok "indexed arena lifecycle emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_lifecycle.py" "$ROOT/build/ccam-native-indexed-lifecycle.bin" "$ROOT/build/ccam-native-indexed-arena.bin" 2>&1)"; then
+      ok "native indexed arena combined lifecycle and allocation"
+    else
+      bad "native indexed lifecycle execution" "$out"
+    fi
+  fi
+else
+  bad "indexed lifecycle emission" "$out"
+fi
+
+section "Candidate native indexed dynamic scalar lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_dynamic_list.cap" 2>&1)"; then
+  ok "indexed dynamic scalar list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_dynamic_list.py" "$ROOT/build/ccam-native-indexed-lifecycle.bin" "$ROOT/build/ccam-native-indexed-dynamic-list.bin" 2>&1)"; then
+      ok "native indexed dynamic scalar list growth and mutation"
+    else
+      bad "indexed dynamic list execution" "$out"
+    fi
+  fi
+else
+  bad "indexed dynamic list emission" "$out"
+fi
+
+section "Candidate native borrowed-FD output"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_output.cap" 2>&1)"; then
+  ok "bounded borrowed-FD output emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_borrowed_output.py" "$ROOT/build/ccam-native-borrowed-fd-output.bin" 2>&1)"; then
+      ok "native borrowed-FD output boundary execution"
+    else
+      bad "native borrowed-FD output execution" "$out"
+    fi
+  fi
+else
+  bad "bounded borrowed-FD output emission" "$out"
+fi
+
+section "Candidate native borrowed-FD input"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_fd.cap" 2>&1)"; then
+  ok "bounded borrowed-FD input emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_borrowed_fd.py" "$ROOT/build/ccam-native-borrowed-fd-read.bin" 2>&1)"; then
+      ok "native borrowed-FD input boundary execution"
+    else
+      bad "native borrowed-FD input execution" "$out"
+    fi
+  fi
+else
+  bad "bounded borrowed-FD input emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
