@@ -32,3 +32,7 @@ jobs:
         run: bin/capstan test verification/ccam_assurance_call_tests.cap
       - name: Run systematic memory and ownership scenarios
         run: bin/capstan test verification/ccam_assurance_memory_tests.cap
+      - name: Run exhaustive bounded GC graph scenarios
+        run: bin/capstan test verification/gc_assurance_graph_tests.cap
+      - name: Run GC handle identity and retirement scenarios
+        run: bin/capstan test verification/gc_assurance_handle_tests.cap
