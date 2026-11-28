@@ -10,6 +10,7 @@ import "ccam_aggregate_program.cap";
 import "ccam_aggregate_native_arena_lifecycle.cap";
 import "ccam_aggregate_native_record_boundary.cap";
 import "ccam_aggregate_native_string_copy.cap";
+import "ccam_aggregate_native_string_conversion.cap";
 import "ccam_aggregate_elf_image.cap";
 import "ccam_aggregate_rel32.cap";
 import "ccam_aggregate_exit_code.cap";
@@ -89,7 +90,8 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
                 if (op[2] < 1 || op[2] >= AG_NV_BYTES_TAG || ag_nv_field_shape(ins.kind, op[4]) == -2) { return false; }
             } else if (ins.opcode == AG_OP_BYTES_LITERAL || ins.opcode == 4 || ins.opcode == 7 ||
                 ins.opcode == AG_OP_BYTES_EQ || ins.opcode == AG_OP_BYTES_NE ||
-                ins.opcode == 8 || ins.opcode == AG_OP_BYTES_SLICE) {
+                ins.opcode == 8 || ins.opcode == AG_OP_BYTES_SLICE ||
+                (ins.opcode >= AG_OP_INT_TEXT && ins.opcode <= AG_OP_BOOL_TEXT)) {
                 // Existing operand schemas admit closed immutable byte operations.
             } else if (calls && ins.opcode == AG_OP_DIRECT_CALL) {
                 // Module-level nominal signature admission and boundary guards.
@@ -291,6 +293,11 @@ bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
         op == 8 || op == AG_OP_BYTES_SLICE) {
         return ag_nv_bytes_instruction(c, ins);
     }
+    if (op >= AG_OP_INT_TEXT && op <= AG_OP_BOOL_TEXT) {
+        return ag_nv_slot(b, false, 0, a[1]) &&
+            ag_nv_imm(b, 8, op - AG_OP_INT_TEXT) &&
+            ag_nv_call(c, c.trap + 10) && ag_nv_slot(b, true, 0, a[0]);
+    }
     if (op == AG_OP_SCALAR_CONST) {
         return ag_nv_imm(b, 0, a[1]) && ag_nv_slot(b, true, 0, a[0]);
     }
@@ -379,7 +386,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     int count = f.blocks.len();
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 10; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 11; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Stack frame: one slot per register and one private return word.
     b.push(72); b.push(129); b.push(236);
@@ -416,6 +423,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     c.labels[count + 7] = b.len(); if (!ag_nv_emit_bytes_equal(b)) { return ag_nv_failure(); }
     c.labels[count + 8] = b.len(); if (!ag_nv_emit_bytes_concat(b)) { return ag_nv_failure(); }
     c.labels[count + 9] = b.len(); if (!ag_nv_emit_bytes_slice(b)) { return ag_nv_failure(); }
+    c.labels[count + 10] = b.len(); if (!ag_nv_emit_bytes_conversion(b)) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
         if (!ag_rel32(b, c.patches[i], c.labels[c.targets[i]])) { return ag_nv_failure(); }
     }
