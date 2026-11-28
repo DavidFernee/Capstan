@@ -208,6 +208,16 @@ else
   bad "bounded native process argv emission" "$out"
 fi
 
+section "Candidate aggregate native CLI and full compiler admission probe"
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  if out="$($PY "$ROOT/tests/unit/native_aggregate_cli.py" "$ROOT" 2>&1)"; then
+    ok "candidate aggregate CLI and complete compiler admission probe (not S1)"
+    printf '%s\n' "$out"
+  else
+    bad "candidate aggregate CLI and complete compiler admission probe" "$out"
+  fi
+fi
+
 section "Candidate native scalar record CFG lowering"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_native_record_lowering_tests.cap" 2>&1)"; then
   ok "checked scalar record CFG to direct native ELF"
