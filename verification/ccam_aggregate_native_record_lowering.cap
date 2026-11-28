@@ -19,10 +19,10 @@ import "ccam_aggregate_rel32.cap";
 import "ccam_aggregate_exit_code.cap";
 
 const int AG_NV_MAX_REGS = 256;
-const int AG_NV_MAX_BLOCKS = 256;
-const int AG_NV_MAX_INS = 1024;
-const int AG_NV_MAX_OPERANDS = 32768;
-const int AG_NV_MAX_FUEL = 4096;
+const int AG_NV_MAX_BLOCKS = 4096;
+const int AG_NV_MAX_INS = 8192;
+const int AG_NV_MAX_OPERANDS = 65536;
+const int AG_NV_MAX_FUEL = 4096; // execution profile unchanged
 // Candidate physical tag reserved for immutable strings. Source descriptor -1.
 const int AG_NV_BYTES_TAG = 4096;
 const int AG_NV_BYTES_DESCRIPTOR = -1;
