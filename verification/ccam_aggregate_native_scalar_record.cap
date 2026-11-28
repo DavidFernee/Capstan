@@ -1,0 +1,115 @@
+// Candidate Linux x86-64 scalar-only record layout (not canonical CCAM ABI).
+// Arena ABI R12=backing base, R13=committed bytes, R14=logical capacity.
+// All backing, cursor, object-start offsets and expected layout descriptors
+// are trusted compiler/runtime inputs, not forgeable language-level integers.
+// Candidate record-only profile: capacity <= 1 MiB, so the 16-byte minimum
+// record extent admits at most 65,536 records. General arenas are unchanged.
+// No concurrency or re-entrance. All fields are mutable signed i64 values.
+// Layout: descriptor:u64, count:u64, then count pairs (i64 value, u64 ready).
+// Alloc: RAX=descriptor (1..4096), RSI=count (0..4096).
+// Returns RAX=object offset, RDX=0; zero offset is valid on success.
+// Load/store: RAX=offset, RSI=expected descriptor, RDI=expected count,
+// R8=index, R9=store value. RDX=0; load returns value, store returns zero.
+// Rejection: RAX=0, RDX=1; no writes and no cursor advance.
+// Clobbers RCX,RDI,R8,R10,flags; allocation clears DF.
+// Checks validate extent and header, not provenance of a fabricated interior
+// offset. Typed handles, full layouts, GC and native lowering remain open.
+import "ccam_aggregate_byte_buffer.cap";
+
+const int AG_NATIVE_SCALAR_RECORD_MAX_CAPACITY = 1048576;
+const int AG_NATIVE_SCALAR_RECORD_ALLOC_SIZE = 137;
+const int AG_NATIVE_SCALAR_RECORD_LOAD_SIZE = 171;
+const int AG_NATIVE_SCALAR_RECORD_STORE_SIZE = 185;
+
+bool ag_native_emit_scalar_record_alloc(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - 137) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(116); code.push(124); code.push(73); code.push(247); code.push(196);
+    code.push(7); code.push(0); code.push(0); code.push(0); code.push(117); code.push(115); code.push(77); code.push(133);
+    code.push(237); code.push(120); code.push(110); code.push(73); code.push(247); code.push(197); code.push(7); code.push(0);
+    code.push(0); code.push(0); code.push(117); code.push(101); code.push(73); code.push(129); code.push(254); code.push(0);
+    code.push(0); code.push(16); code.push(0); code.push(119); code.push(92); code.push(77); code.push(57); code.push(245);
+    code.push(119); code.push(87); code.push(76); code.push(137); code.push(225); code.push(76); code.push(1); code.push(241);
+    code.push(114); code.push(79); code.push(72); code.push(131); code.push(248); code.push(1); code.push(114); code.push(73);
+    code.push(72); code.push(61); code.push(0); code.push(16); code.push(0); code.push(0); code.push(119); code.push(65);
+    code.push(72); code.push(129); code.push(254); code.push(0); code.push(16); code.push(0); code.push(0); code.push(119);
+    code.push(56); code.push(73); code.push(137); code.push(242); code.push(73); code.push(193); code.push(226); code.push(4);
+    code.push(73); code.push(131); code.push(194); code.push(16); code.push(76); code.push(137); code.push(241); code.push(76);
+    code.push(41); code.push(233); code.push(73); code.push(57); code.push(202); code.push(119); code.push(34); code.push(75);
+    code.push(141); code.push(60); code.push(44); code.push(72); code.push(137); code.push(7); code.push(72); code.push(137);
+    code.push(119); code.push(8); code.push(72); code.push(131); code.push(199); code.push(16); code.push(72); code.push(141);
+    code.push(12); code.push(54); code.push(49); code.push(192); code.push(252); code.push(243); code.push(72); code.push(171);
+    code.push(76); code.push(137); code.push(232); code.push(77); code.push(1); code.push(213); code.push(49); code.push(210);
+    code.push(195); code.push(49); code.push(192); code.push(186); code.push(1); code.push(0); code.push(0); code.push(0);
+    code.push(195);
+    return true;
+}
+
+bool ag_native_emit_scalar_record_load(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - 171) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(15); code.push(132); code.push(154); code.push(0); code.push(0);
+    code.push(0); code.push(73); code.push(247); code.push(196); code.push(7); code.push(0); code.push(0); code.push(0);
+    code.push(15); code.push(133); code.push(141); code.push(0); code.push(0); code.push(0); code.push(77); code.push(133);
+    code.push(237); code.push(15); code.push(136); code.push(132); code.push(0); code.push(0); code.push(0); code.push(73);
+    code.push(247); code.push(197); code.push(7); code.push(0); code.push(0); code.push(0); code.push(117); code.push(123);
+    code.push(73); code.push(129); code.push(254); code.push(0); code.push(0); code.push(16); code.push(0); code.push(119);
+    code.push(114); code.push(77); code.push(57); code.push(245); code.push(119); code.push(109); code.push(76); code.push(137);
+    code.push(225); code.push(76); code.push(1); code.push(241); code.push(114); code.push(101); code.push(72); code.push(131);
+    code.push(254); code.push(1); code.push(114); code.push(95); code.push(72); code.push(129); code.push(254); code.push(0);
+    code.push(16); code.push(0); code.push(0); code.push(119); code.push(86); code.push(72); code.push(129); code.push(255);
+    code.push(0); code.push(16); code.push(0); code.push(0); code.push(119); code.push(77); code.push(73); code.push(57);
+    code.push(248); code.push(115); code.push(72); code.push(72); code.push(169); code.push(7); code.push(0); code.push(0);
+    code.push(0); code.push(117); code.push(64); code.push(76); code.push(57); code.push(232); code.push(119); code.push(59);
+    code.push(76); code.push(137); code.push(233); code.push(72); code.push(41); code.push(193); code.push(73); code.push(137);
+    code.push(250); code.push(73); code.push(193); code.push(226); code.push(4); code.push(73); code.push(131); code.push(194);
+    code.push(16); code.push(73); code.push(57); code.push(202); code.push(119); code.push(37); code.push(77); code.push(141);
+    code.push(20); code.push(4); code.push(73); code.push(57); code.push(50); code.push(117); code.push(28); code.push(73);
+    code.push(57); code.push(122); code.push(8); code.push(117); code.push(22); code.push(73); code.push(193); code.push(224);
+    code.push(4); code.push(79); code.push(141); code.push(84); code.push(2); code.push(16); code.push(73); code.push(131);
+    code.push(122); code.push(8); code.push(1); code.push(117); code.push(6); code.push(73); code.push(139); code.push(2);
+    code.push(49); code.push(210); code.push(195); code.push(49); code.push(192); code.push(186); code.push(1); code.push(0);
+    code.push(0); code.push(0); code.push(195);
+    return true;
+}
+
+bool ag_native_emit_scalar_record_store(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - 185) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(15); code.push(132); code.push(168); code.push(0); code.push(0);
+    code.push(0); code.push(73); code.push(247); code.push(196); code.push(7); code.push(0); code.push(0); code.push(0);
+    code.push(15); code.push(133); code.push(155); code.push(0); code.push(0); code.push(0); code.push(77); code.push(133);
+    code.push(237); code.push(15); code.push(136); code.push(146); code.push(0); code.push(0); code.push(0); code.push(73);
+    code.push(247); code.push(197); code.push(7); code.push(0); code.push(0); code.push(0); code.push(15); code.push(133);
+    code.push(133); code.push(0); code.push(0); code.push(0); code.push(73); code.push(129); code.push(254); code.push(0);
+    code.push(0); code.push(16); code.push(0); code.push(119); code.push(124); code.push(77); code.push(57); code.push(245);
+    code.push(119); code.push(119); code.push(76); code.push(137); code.push(225); code.push(76); code.push(1); code.push(241);
+    code.push(114); code.push(111); code.push(72); code.push(131); code.push(254); code.push(1); code.push(114); code.push(105);
+    code.push(72); code.push(129); code.push(254); code.push(0); code.push(16); code.push(0); code.push(0); code.push(119);
+    code.push(96); code.push(72); code.push(129); code.push(255); code.push(0); code.push(16); code.push(0); code.push(0);
+    code.push(119); code.push(87); code.push(73); code.push(57); code.push(248); code.push(115); code.push(82); code.push(72);
+    code.push(169); code.push(7); code.push(0); code.push(0); code.push(0); code.push(117); code.push(74); code.push(76);
+    code.push(57); code.push(232); code.push(119); code.push(69); code.push(76); code.push(137); code.push(233); code.push(72);
+    code.push(41); code.push(193); code.push(73); code.push(137); code.push(250); code.push(73); code.push(193); code.push(226);
+    code.push(4); code.push(73); code.push(131); code.push(194); code.push(16); code.push(73); code.push(57); code.push(202);
+    code.push(119); code.push(47); code.push(77); code.push(141); code.push(20); code.push(4); code.push(73); code.push(57);
+    code.push(50); code.push(117); code.push(38); code.push(73); code.push(57); code.push(122); code.push(8); code.push(117);
+    code.push(32); code.push(73); code.push(193); code.push(224); code.push(4); code.push(79); code.push(141); code.push(84);
+    code.push(2); code.push(16); code.push(73); code.push(131); code.push(122); code.push(8); code.push(1); code.push(119);
+    code.push(16); code.push(77); code.push(137); code.push(10); code.push(73); code.push(199); code.push(66); code.push(8);
+    code.push(1); code.push(0); code.push(0); code.push(0); code.push(49); code.push(192); code.push(49); code.push(210);
+    code.push(195); code.push(49); code.push(192); code.push(186); code.push(1); code.push(0); code.push(0); code.push(0);
+    code.push(195);
+    return true;
+}
+
+test "candidate scalar record native leaves emit complete fixed byte fragments" {
+    List<int> code = new List<int>();
+    assert(ag_native_emit_scalar_record_alloc(code));
+    assert(code.len() == AG_NATIVE_SCALAR_RECORD_ALLOC_SIZE);
+    assert(ag_native_emit_scalar_record_load(code));
+    assert(code.len() == AG_NATIVE_SCALAR_RECORD_ALLOC_SIZE + AG_NATIVE_SCALAR_RECORD_LOAD_SIZE);
+    assert(ag_native_emit_scalar_record_store(code));
+    assert(code.len() == 493);
+    string data = "";
+    for (int i = 0; i < code.len(); i += 1) { data = data + char_str(code[i]); }
+    assert(data.len() == 493);
+    assert(write_file("build/ccam-aggregate-native-scalar-record.bin", data));
+}

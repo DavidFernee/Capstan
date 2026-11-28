@@ -1,0 +1,81 @@
+import "ccam_aggregate_native_checked_entry.cap";
+
+AGSourceFunction? ag_nv_test_source(string text) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("native-entry.cap");
+    Tainted source = taint(text); ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) == 0) { check_program(new_checker(ctx), declarations, false); }
+    return ag_nv_checked_entry(ctx, declarations);
+}
+
+bool ag_nv_test_write(AGImage image, string path) {
+    if (!image.ok || image.bytes.len() > 32768) { return false; }
+    string data = "";
+    for (int i = 0; i < image.bytes.len(); i += 1) { data = data + char_str(image.bytes[i]); }
+    return write_file(path, data);
+}
+
+AGBlockInstruction ag_nv_test_ins(int opcode, int kind, int a, int b, int c) {
+    List<int> operands = new List<int>(); operands.push(a); operands.push(b);
+    if (opcode != AG_OP_SCALAR_CONST) { operands.push(c); }
+    return new AGBlockInstruction{opcode: opcode, kind: kind, operands: operands};
+}
+
+AGFunction ag_nv_test_arith(int opcode, int a, int b) {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 0, a, 0));
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 1, b, 0));
+    instructions.push(ag_nv_test_ins(opcode, AG_SCHEMA_INT, 2, 0, 1));
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(2);
+    return new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+}
+
+test "checked source record loop compiles to direct ELF and agrees with candidate evaluator" {
+    if (let entry = ag_nv_test_source(
+        "struct Counter { int nodes; } " +
+        "int run() { Counter counter = new Counter{nodes: 0}; " +
+        "int i = 0; while (i < 4) { counter.nodes += 2; i += 1; } " +
+        "if (counter.nodes == 8) { return counter.nodes * 3 - 1; } return 0 - 1; }")) {
+        List<AGFunction> functions = new List<AGFunction>(); functions.push(entry.function);
+        List<AGNominalSignature> signatures = new List<AGNominalSignature>(); signatures.push(entry.signature);
+        AGSealResult sealed = ag_seal_program(functions, signatures);
+        assert(sealed.ok);
+        List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+        CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 1024);
+        assert(root.ok);
+        AGStackResult stack = ag_stack_create(root.machine, 4, 512);
+        assert(stack.ok);
+        assert(ag_sealed_invoke(sealed.program, stack.stack, 0, new List<int>(), 0) == "");
+        assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 23);
+        assert(ag_nv_test_write(ag_nv_compile(entry.function, 1024), "build/ccam-native-record-loop.elf"));
+        assert(ag_nv_test_write(ag_nv_compile(entry.function, 1), "build/ccam-native-record-fuel.elf"));
+    } else { assert(false); }
+}
+
+test "candidate native arithmetic admits signed extrema and explicit arithmetic traps" {
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_arith(AG_OP_ADD, CCAM_I64_MIN, 0), 4), "build/ccam-native-record-min.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_arith(AG_OP_DIV, -7, 3), 4), "build/ccam-native-record-div.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_arith(AG_OP_REM, CCAM_I64_MIN, -1), 4), "build/ccam-native-record-rem.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_arith(AG_OP_ADD, CCAM_I64_MAX, 1), 4), "build/ccam-native-record-overflow.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_arith(AG_OP_DIV, CCAM_I64_MIN, -1), 4), "build/ccam-native-record-divoverflow.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_arith(AG_OP_DIV, 1, 0), 4), "build/ccam-native-record-divzero.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_arith(AG_OP_REM, -7, 3), 4), "build/ccam-native-record-negative-rem.elf"));
+}
+
+test "candidate native admission rejects invalid budgets and unsupported source" {
+    AGFunction f = ag_nv_test_arith(AG_OP_ADD, 1, 2);
+    assert(!ag_nv_compile(f, 0).ok && !ag_nv_compile(f, 4097).ok);
+    if (let entry = ag_nv_test_source("int run() { List<int> v = new List<int>(); return v.len(); }")) {
+        AGImage refused = ag_nv_compile(entry.function, 100);
+        assert(!refused.ok && refused.bytes.len() == 0);
+    } else { assert(false); }
+    f.blocks[0].instructions[2].operands[1] = 99;
+    AGImage invalid = ag_nv_compile(f, 100);
+    assert(!invalid.ok && invalid.bytes.len() == 0);
+}
