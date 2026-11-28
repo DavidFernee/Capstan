@@ -188,3 +188,62 @@ test "checked aggregate arithmetic overflow preserves the caller destination" {
     assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "integer_overflow");
     assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 42);
 }
+
+test "candidate checked source lowers production AST worklist traversal with reduced record schema" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "const int MAX_TOTAL_AST_NODES = 150000; " +
+        "struct CompileBudget { int ast_nodes; bool exhausted; } " +
+        "struct Node { List<Node> kids; } " +
+        "bool charge_ast_nodes(CompileBudget budget, List<Node> roots) { " +
+        "    List<Node> pending = new List<Node>(); " +
+        "    for (int i = 0; i < roots.len(); i += 1) { pending.push(roots[i]); } " +
+        "    while (pending.len() > 0) { " +
+        "        Node node = pending[pending.len() - 1]; " +
+        "        pending.pop(); " +
+        "        if (budget.ast_nodes >= MAX_TOTAL_AST_NODES) { " +
+        "            budget.exhausted = true; " +
+        "            return false; " +
+        "        } " +
+        "        budget.ast_nodes += 1; " +
+        "        for (int k = 0; k < node.kids.len(); k += 1) { pending.push(node.kids[k]); } " +
+        "    } " +
+        "    return true; " +
+        "} ");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 8192, 32, 8192, 8192, 512);
+    assert(root.ok);
+    CCAMAggregateMachine machine = root.machine;
+    List<int> fields = new List<int>(); fields.push(AG_SCHEMA_INT); fields.push(AG_SCHEMA_BOOL);
+    List<bool> mutable_fields = new List<bool>(); mutable_fields.push(true); mutable_fields.push(true);
+    CCAMHeapLayout budget_layout = new CCAMHeapLayout{type_id: 1, field_types: fields,
+        field_ref_type_ids: new List<int>(), field_mutable: mutable_fields};
+    assert(ccam_aggregate_alloc_record(machine, 0, budget_layout) == "");
+    assert(ccam_aggregate_write(machine, 4, ccam_heap_int(149999)) == "");
+    assert(ccam_aggregate_write(machine, 5, ccam_heap_bool(false)) == "");
+    assert(ccam_aggregate_field_set(machine, 0, 1, 0, 4, AG_SCHEMA_INT) == "");
+    assert(ccam_aggregate_field_set(machine, 0, 1, 1, 5, AG_SCHEMA_BOOL) == "");
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_REF, 2, 2) == "");
+    assert(ccam_aggregate_alloc_array(machine, 3, AG_SCHEMA_REF, 2, 0) == "");
+    List<int> node_fields = new List<int>(); node_fields.push(AG_SCHEMA_REF);
+    List<int> node_refs = new List<int>(); node_refs.push(0);
+    List<bool> node_mutable = new List<bool>(); node_mutable.push(true);
+    CCAMHeapLayout node_layout = new CCAMHeapLayout{type_id: 2, field_types: node_fields,
+        field_ref_type_ids: node_refs, field_mutable: node_mutable};
+    assert(ccam_aggregate_alloc_record(machine, 2, node_layout) == "");
+    assert(ccam_aggregate_field_set(machine, 2, 2, 0, 3, AG_SCHEMA_REF) == "");
+    assert(ccam_aggregate_array_append(machine, 1, 2, AG_SCHEMA_REF) == "");
+    assert(ccam_aggregate_array_append(machine, 1, 2, AG_SCHEMA_REF) == "");
+    AGStackResult stack = ag_stack_create(machine, 4, 256);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 5) == "");
+    assert(!ccam_aggregate_read(stack.stack.active, 5, AG_SCHEMA_BOOL).value.bool_value);
+    CCAMAggregateValueResult budget = ccam_aggregate_read(machine, 0, AG_SCHEMA_REF);
+    if (let reference = budget.value.reference) {
+        assert(ccam_heap_field_get(machine.heap, reference, 1, 0).value.int_value == 150000);
+        assert(ccam_heap_field_get(machine.heap, reference, 1, 1).value.bool_value);
+    } else { assert(false); }
+}
