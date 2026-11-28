@@ -152,6 +152,20 @@ else
   bad "bounded native scalar record emission" "$out"
 fi
 
+section "Candidate native record boundary membership"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_record_boundary.cap" 2>&1)"; then
+  ok "bounded native record membership guard emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_record.py" "$ROOT/build/ccam-aggregate-native-record-boundary.bin" --guarded 2>&1)"; then
+      ok "native guarded record access rejects forged interior headers"
+    else
+      bad "native record boundary execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native record membership guard emission" "$out"
+fi
+
 section "Checked production AST to candidate aggregate evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
   ok "checked aggregate source leaf lowering and sealed invocation"
