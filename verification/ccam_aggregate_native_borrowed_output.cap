@@ -14,9 +14,11 @@
 // races. No source opcode, authority acquisition or canonical ABI claim.
 import "ccam_aggregate_native_record_boundary.cap";
 
-const int AG_NATIVE_FD_OUTPUT_SIZE = 316 + AG_NATIVE_RECORD_BOUNDARY_SIZE;
+// Global initialisers cannot resolve imported constants in the bootstrap.
+const int AG_NATIVE_FD_OUTPUT_SIZE = 494;
 
 bool ag_native_emit_borrowed_fd_output(List<int> b) {
+    if (AG_NATIVE_FD_OUTPUT_SIZE != 316 + AG_NATIVE_RECORD_BOUNDARY_SIZE) { return false; }
     if (b.len() > AG_BYTE_LIMIT - AG_NATIVE_FD_OUTPUT_SIZE) { return false; }
     b.push(73); b.push(129); b.push(248); b.push(255); b.push(255); b.push(255); b.push(127); b.push(15);
     b.push(135); b.push(39); b.push(1); b.push(0); b.push(0); b.push(73); b.push(129); b.push(249);
