@@ -296,3 +296,26 @@ test "candidate native string output limit and invalid slice ranges reject" {
     assert(ag_nv_test_write(ag_nvc_test_source("int run() { string a = \"abc\"; return a.slice(0 - 1, 2).len(); }", 100, 8),
         "build/ccam-native-record-bytes-slice-negative.elf"));
 }
+
+test "candidate native integer text handles signed extrema and zero" {
+    string source = "int run() { int low = 0 - 9223372036854775807 - 1; " +
+        "if (int_to_str(low) == \"-9223372036854775808\") { " +
+        "if (int_to_str(9223372036854775807) == \"9223372036854775807\") { " +
+        "if (int_to_str(0) == \"0\") { return 42; } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-text-extrema.elf"));
+}
+
+test "candidate native byte and boolean conversions preserve exact values" {
+    string source = "string label(bool b) { return to_text(b); } " +
+        "int run() { string s = char_str(0) + char_str(255); " +
+        "if (label(true) == \"true\") { if (label(false) == \"false\") { " +
+        "if (s.len() == 2) { return s.at(0) + s.at(1); } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-text-byte-bool.elf"));
+}
+
+test "candidate native invalid byte conversions reject before publication" {
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { return char_str(256).len(); }", 100, 8),
+        "build/ccam-native-record-text-byte-over.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { return char_str(0 - 1).len(); }", 100, 8),
+        "build/ccam-native-record-text-byte-negative.elf"));
+}
