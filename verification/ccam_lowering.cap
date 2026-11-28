@@ -20,6 +20,7 @@ struct CCAMLoweringContext {
     Node source_function;
     List<Node> source_functions;
     Map<int> function_indices;
+    Map<Node> scalar_constants;
     Map<int> binding_registers;
     List<int> register_types;
     List<CCAMInstruction> instructions;
@@ -532,6 +533,19 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         return ccam_lower_bool_constant(context, expression.n != 0);
     }
     if (expression.k == N_VAR) {
+        // The checker supplies a binding ID for locals and marks constant
+        // references separately. A local binding takes precedence by identity.
+        if (expression.binding_id == 0 && expression.n == 1) {
+            if (let literal = context.scalar_constants.get(expression.s)) {
+                if (source_type != ccam_source_register_type(ty_of(literal))) {
+                    ccam_lower_fail(context, "constant_type_mismatch");
+                    return -1;
+                }
+                return ccam_lower_expression(context, literal);
+            }
+            ccam_lower_fail(context, "unknown_scalar_constant");
+            return -1;
+        }
         int index = ccam_lower_local_register(context, expression);
         if (index < 0) { return -1; }
         if (context.register_types[index] != source_type) {
@@ -862,21 +876,51 @@ void ccam_lower_statement(CCAMLoweringContext context, Node statement) {
 }
 
 CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
-    if (declarations.len() > CCAM_MAX_FUNCTIONS) {
+    if (declarations.len() > MAX_TOTAL_AST_NODES) {
         return new CCAMLoweringResult{
             ok: false, functions: new List<CCAMFunction>(),
-            entry_function: -1, error: "function_count_limit"
+            entry_function: -1, error: "declaration_count_limit"
         };
     }
     List<Node> source_functions = new List<Node>();
     Map<int> function_indices = new Map<int>();
+    Map<Node> scalar_constants = new Map<Node>();
     int total_function_name_bytes = 0;
     for (int i = 0; i < declarations.len(); i += 1) {
         Node declaration = declarations[i];
+        if (declaration.k == N_CONST) {
+            if (declaration.kids.len() != 1 || scalar_constants.has(declaration.s) ||
+                function_indices.has(declaration.s)) {
+                return new CCAMLoweringResult{
+                    ok: false, functions: new List<CCAMFunction>(),
+                    entry_function: -1, error: "invalid_scalar_constant"
+                };
+            }
+            Node literal = declaration.kids[0];
+            int type = ccam_source_register_type(ty_of(declaration));
+            if (literal.kids.len() != 0 ||
+                type != ccam_source_register_type(ty_of(literal)) ||
+                !((literal.k == N_INT && type == CCAM_TYPE_INT) ||
+                  (literal.k == N_BOOL && type == CCAM_TYPE_BOOL &&
+                   (literal.n == 0 || literal.n == 1)))) {
+                return new CCAMLoweringResult{
+                    ok: false, functions: new List<CCAMFunction>(),
+                    entry_function: -1, error: "unsupported_scalar_constant_initializer"
+                };
+            }
+            scalar_constants.set(declaration.s, literal);
+            continue;
+        }
         if (declaration.k != N_FN) {
             return new CCAMLoweringResult{
                 ok: false, functions: new List<CCAMFunction>(),
                 entry_function: -1, error: "unsupported_top_level_declaration"
+            };
+        }
+        if (source_functions.len() >= CCAM_MAX_FUNCTIONS) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "function_count_limit"
             };
         }
         if (declaration.s2 != "") {
@@ -899,7 +943,7 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
             };
         }
         total_function_name_bytes += name_bytes;
-        if (function_indices.has(declaration.s)) {
+        if (function_indices.has(declaration.s) || scalar_constants.has(declaration.s)) {
             return new CCAMLoweringResult{
                 ok: false, functions: new List<CCAMFunction>(),
                 entry_function: -1, error: "duplicate_function"
@@ -960,7 +1004,7 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
         CCAMLoweringContext context = new CCAMLoweringContext{
             source_function: source_function,
             source_functions: source_functions,
-            function_indices: function_indices,
+            function_indices: function_indices, scalar_constants: scalar_constants,
             binding_registers: new Map<int>(),
             register_types: new List<int>(),
             instructions: new List<CCAMInstruction>(),
@@ -1828,4 +1872,32 @@ test "CCAM source lowering cannot use a void output call as a register" {
     return_statement.kids[0] = output_call;
     CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
     assert(!lowered.ok && lowered.error == "invalid_scalar_call_result_type");
+}
+
+test "CCAM source lowering evaluates literal scalar constants" {
+    Ctx context = new Ctx{
+        files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false
+    };
+    context.files.push("literal-constants.cap");
+    Tainted source = taint(
+        "const int ANSWER = 42; const bool READY = true; " +
+        "int main() { if (READY) { return ANSWER; } return 0; }");
+    context.sources.push(source);
+    List<Node> declarations = parse_program(context, lex(context, source, 0));
+    check_program(new_checker(context), declarations, true);
+    assert(error_count(context) == 0);
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok && lowered.functions.len() == 1);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 32, 1);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    while (!machine.halted) { ccam_call_machine_step(machine); }
+    assert(machine.trap_code == "" && machine.halt_has_value && machine.halt_value == 42);
+
+    Node initializer = declarations[0].kids[0];
+    initializer.k = N_CALL;
+    CCAMLoweringResult rejected = ccam_lower_checked_program(declarations);
+    assert(!rejected.ok && rejected.error == "unsupported_scalar_constant_initializer");
 }

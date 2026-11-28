@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "2409357ea777a3875bc608106fce5e42eb233656"
+    "commit": "4ff314e51680262c016c655fd874a884c8b4ff47"
   },
   "claims": [
     {
@@ -118,8 +118,8 @@
             "docs/architecture/CCAM-AGGREGATE-MACHINE-BRIDGE.md"
           ],
           "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
-          "revision": "7016b66e092206ac57bfdc77f96d76cc72cd46e5",
-          "notes": "C-free assurance contract and compatibility boundary, including the experimental aggregate bridge's explicit non-goals; not a claim of completed end-to-end verification. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted. C02 adds AST arity, literal domain and result-type rejection; malformed-node regression tests added. No new proof or passing exact-head test asserted."
+          "revision": "4ff314e51680262c016c655fd874a884c8b4ff47",
+          "notes": "C-free assurance contract and compatibility boundary, including the experimental aggregate bridge's explicit non-goals; not a claim of completed end-to-end verification. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted. C02 adds AST arity, literal domain and result-type rejection; malformed-node regression tests added. No new proof or passing exact-head test asserted. Literal scalar constant lowering is implemented for closed int/bool literal initialisers with declaration-count, duplicate-name, type and node-shape rejection; tests exercise successful constant evaluation and rejection of non-literal initialisers. This is implementation/test evidence only and does not prove checker soundness or source-to-CCAM semantic preservation."
         },
         {
           "kind": "mechanical-proof",
@@ -133,9 +133,9 @@
             "verification/lean/CapstanVerification/MultiFunction.lean"
           ],
           "procedure": "Build the pinned Lean verification package and inspect the axiom audit. Treat the results only as the restricted mathematical model documented in C-FREE-TYPE-SAFETY.md.",
-          "revision": "7016b66e092206ac57bfdc77f96d76cc72cd46e5",
+          "revision": "4ff314e51680262c016c655fd874a884c8b4ff47",
           "tool": "Lean 4.19.0",
-          "notes": "Restricted scalar CCAM proofs, including the typed call-frame protocol model; aggregate-heap model work is separately scoped and does not establish implementation correspondence. Inventory refreshed at reconciled source revision; no new proof execution or concrete refinement asserted. C02 adds AST arity, literal domain and result-type rejection; malformed-node regression tests added. No new proof or passing exact-head test asserted."
+          "notes": "Restricted scalar CCAM proofs, including the typed call-frame protocol model; aggregate-heap model work is separately scoped and does not establish implementation correspondence. Inventory refreshed at reconciled source revision; no new proof execution or concrete refinement asserted. C02 adds AST arity, literal domain and result-type rejection; malformed-node regression tests added. No new proof or passing exact-head test asserted. Literal scalar constant lowering is implemented for closed int/bool literal initialisers with declaration-count, duplicate-name, type and node-shape rejection; tests exercise successful constant evaluation and rejection of non-literal initialisers. This is implementation/test evidence only and does not prove checker soundness or source-to-CCAM semantic preservation."
         },
         {
           "kind": "test",
@@ -144,16 +144,18 @@
             "verification/ccam_core_tests.cap",
             "verification/ccam_lowering.cap",
             "tests/run.sh",
-            "verification/ccam_core.cap"
+            "verification/ccam_core.cap",
+            "verification/ccam_scalar_native_frame.cap",
+            "verification/ccam_scalar_native_symbols.cap"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "7016b66e092206ac57bfdc77f96d76cc72cd46e5",
-          "notes": "Test plan includes CCAM core, source lowering and the repository runner. The runner now also exercises the experimental aggregate bridge; that test does not promote aggregates into the scalar proof profile. No exact-head passing run is asserted. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted. C02 adds AST arity, literal domain and result-type rejection; malformed-node regression tests added. No new proof or passing exact-head test asserted."
+          "revision": "4ff314e51680262c016c655fd874a884c8b4ff47",
+          "notes": "Test plan includes CCAM core, source lowering and the repository runner. The runner now also exercises the experimental aggregate bridge; that test does not promote aggregates into the scalar proof profile. No exact-head passing run is asserted. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted. C02 adds AST arity, literal domain and result-type rejection; malformed-node regression tests added. No new proof or passing exact-head test asserted. Literal scalar constant lowering is implemented for closed int/bool literal initialisers with declaration-count, duplicate-name, type and node-shape rejection; tests exercise successful constant evaluation and rejection of non-literal initialisers. This is implementation/test evidence only and does not prove checker soundness or source-to-CCAM semantic preservation."
         }
       ],
       "review": {
-        "reviewed_at": "2026-11-27",
-        "reviewed_commit": "7016b66e092206ac57bfdc77f96d76cc72cd46e5"
+        "reviewed_at": "2026-11-28",
+        "reviewed_commit": "4ff314e51680262c016c655fd874a884c8b4ff47"
       },
       "covers": [
         "verification/lean/CapstanVerification/Core.lean",
