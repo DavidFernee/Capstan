@@ -277,7 +277,28 @@ bool ag_schema_taint_operands(List<int> kinds, int opcode, int kind, List<int> o
     return count != 4 || ag_schema_register(kinds, operands[3], AG_SCHEMA_INT);
 }
 
+// Contextual log values have a distinct result shape; no conversion to
+// ordinary bytes or raw tainted concatenation is admitted.
+const int AG_OP_ESCAPE_LOG = 55;
+const int AG_OP_LOG_CONCAT = 56;
+
+bool ag_schema_log_opcode(int opcode) {
+    return opcode == AG_OP_ESCAPE_LOG || opcode == AG_OP_LOG_CONCAT;
+}
+
+bool ag_schema_log_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (!ag_schema_log_opcode(opcode) || kind != AG_SCHEMA_REF) { return false; }
+    int count = 2;
+    if (opcode == AG_OP_LOG_CONCAT) { count = 3; }
+    if (operands.len() != count) { return false; }
+    for (int i = 0; i < count; i += 1) {
+        if (!ag_schema_register(kinds, operands[i], AG_SCHEMA_REF)) { return false; }
+    }
+    return true;
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (ag_schema_log_opcode(opcode)) { return ag_schema_log_operands(kinds, opcode, element_kind, operands); }
     if (ag_schema_taint_opcode(opcode)) { return ag_schema_taint_operands(kinds, opcode, element_kind, operands); }
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
     if (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) {

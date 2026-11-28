@@ -597,3 +597,36 @@ test "taint transfer rejects uninitialised index and alias before destination wr
     ready[0] = false;
     assert(!ag_transfer(kinds, ready, AG_OP_TAINT_SLICE, AG_SCHEMA_REF, operands).ok);
 }
+
+test "checked contextual LogText lowering preserves nominal optional return" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "LogText? excerpt(Tainted src, bool present) { if (!present) { return none; } " +
+        "LogText line = \"    \" + escape_log(src.slice(0, src.len())); return line + \"\\n    ^\"; } " +
+        "int run() { if (let value = excerpt(taint(\"abc\"), true)) { " +
+        "LogText again = escape_log(value); return 42; } return 0; } " +
+        "int absent() { if (let value = excerpt(taint(\"abc\"), false)) { return 1; } return 0; }");
+    assert(compiled.ok && compiled.function_names.len() == 3);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 65536, 64, 65536, 65536, 1024);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 8, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 0);
+    assert(!ag_source_test_compile("string bad(Tainted x) { return escape_log(x); }").ok);
+    assert(!ag_source_test_compile("LogText bad(Tainted x) { return escape_log(x) + x; }").ok);
+    assert(!ag_source_test_compile("LogText? bad() { return \"raw\"; }").ok);
+}
+
+test "LogText static transfer rejects unread operands even with aliased destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    List<bool> ready = new List<bool>(); ready.push(true); ready.push(false);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(0); operands.push(1);
+    assert(!ag_transfer(kinds, ready, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands).ok);
+    ready[1] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands).ok);
+    ready[0] = false;
+    assert(!ag_transfer(kinds, ready, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands).ok);
+}

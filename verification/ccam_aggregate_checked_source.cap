@@ -24,7 +24,7 @@ AGSourceShape ag_source_shape(Type t, Map<int> records) {
         Type inner = t.args[0];
         if (inner.args.len() != 0) { return ag_source_invalid_shape(); }
         AGSourceShape optional = ag_source_shape(mk_wrap(TY_OPT, inner), records);
-        if (!ccam_heap_optional_descriptor(optional.descriptor)) { return ag_source_invalid_shape(); }
+        if (!ccam_heap_optional_descriptor(optional.descriptor) || optional.descriptor == AG_OPTIONAL_LOG) { return ag_source_invalid_shape(); }
         return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_MAP_DESCRIPTOR_BASE + optional.descriptor};
     }
     if (t.k == TY_OPT && t.args.len() == 1 && t.name == "") {
@@ -34,6 +34,7 @@ AGSourceShape ag_source_shape(Type t, Map<int> records) {
         if (inner.k == TY_INT && inner.name == "") { descriptor = AG_OPTIONAL_INT; }
         if (inner.k == TY_BOOL && inner.name == "") { descriptor = AG_OPTIONAL_BOOL; }
         if (inner.k == TY_STR && inner.name == "") { descriptor = AG_OPTIONAL_BYTES; }
+        if (inner.k == TY_LOG && inner.name == "") { descriptor = AG_OPTIONAL_LOG; }
         if (inner.k == TY_STRUCT) {
             if (let id = records.get(inner.name)) { descriptor = AG_OPTIONAL_RECORD_BASE + id; }
         }
@@ -78,6 +79,7 @@ AGSourceShape ag_source_shape(Type t, Map<int> records) {
     if (t.k == TY_BOOL) { return new AGSourceShape{kind: AG_SCHEMA_BOOL, descriptor: 0}; }
     if (t.k == TY_STR) { return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_BYTES}; }
     if (t.k == TY_TAINT) { return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_TAINTED}; }
+    if (t.k == TY_LOG) { return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_LOG}; }
     return ag_source_invalid_shape();
 }
 
@@ -189,6 +191,7 @@ int ag_source_expected(AGSourceContext c, Node e, AGSourceShape expected, int de
     int kind = ccam_heap_optional_payload_kind(expected.descriptor);
     int descriptor = 0;
     if (expected.descriptor == AG_OPTIONAL_BYTES) { descriptor = AG_NOMINAL_BYTES; }
+    if (expected.descriptor == AG_OPTIONAL_LOG) { descriptor = AG_NOMINAL_LOG; }
     if (expected.descriptor > AG_OPTIONAL_RECORD_BASE) {
         descriptor = expected.descriptor - AG_OPTIONAL_RECORD_BASE;
     }
@@ -507,6 +510,16 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         if (left < 0) { return -1; }
         int right = ag_source_expr(c, e.kids[1], depth + 1);
         if (right < 0) { return -1; }
+        if (c.descriptors[left] == AG_NOMINAL_LOG || c.descriptors[right] == AG_NOMINAL_LOG) {
+            if (e.s != "+" || shape.kind != AG_SCHEMA_REF || shape.descriptor != AG_NOMINAL_LOG ||
+                (c.descriptors[left] != AG_NOMINAL_LOG && c.descriptors[left] != AG_NOMINAL_BYTES) ||
+                (c.descriptors[right] != AG_NOMINAL_LOG && c.descriptors[right] != AG_NOMINAL_BYTES)) { return -1; }
+            int dest = ag_source_register(c, shape);
+            if (dest < 0) { return -1; }
+            List<int> operands = new List<int>(); operands.push(dest); operands.push(left); operands.push(right);
+            if (!ag_source_emit(c, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands)) { return -1; }
+            return dest;
+        }
         if (c.descriptors[left] == AG_NOMINAL_BYTES || c.descriptors[right] == AG_NOMINAL_BYTES) {
             return ag_source_string_binary(c, e.s, shape, left, right);
         }
@@ -579,6 +592,13 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         return -1;
     }
     if (e.k == N_CALL) {
+        if (e.s == "escape_log" && !c.function_nodes.has(e.s) && e.kids.len() == 1 &&
+            shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_LOG) {
+            int value = ag_source_expr(c, e.kids[0], depth + 1);
+            if (value < 0 || (c.descriptors[value] != AG_NOMINAL_BYTES &&
+                c.descriptors[value] != AG_NOMINAL_TAINTED && c.descriptors[value] != AG_NOMINAL_LOG)) { return -1; }
+            return ag_source_emit_read(c, AG_OP_ESCAPE_LOG, AG_SCHEMA_REF, shape, value, -1);
+        }
         if (e.s == "taint" && !c.function_nodes.has(e.s) && e.kids.len() == 1 &&
             shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_TAINTED) {
             int value = ag_source_expr(c, e.kids[0], depth + 1);

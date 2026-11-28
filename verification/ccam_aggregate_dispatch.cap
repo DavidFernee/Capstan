@@ -11,6 +11,11 @@ bool ag_dispatch_reg(CCAMAggregateMachine machine, int index, int kind) {
 
 bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.registers.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(kind)) { return false; }
+    if (ag_schema_log_opcode(opcode)) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_log_operands(kinds, opcode, kind, operands);
+    }
     if (ag_schema_taint_opcode(opcode)) {
         List<int> kinds = new List<int>();
         for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
@@ -442,11 +447,38 @@ string ag_dispatch_taint_list(CCAMAggregateMachine machine, int opcode, List<int
     return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
 }
 
+// All source references are read before fuel or destination mutation.
+// The heap enforces exact trusted/tainted/log object kinds and quotas.
+string ag_dispatch_log(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    CCAMAggregateValueResult left = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!left.ok) { return ccam_aggregate_trap(machine, left.trap); }
+    if (let reference = left.value.reference) {
+        if (opcode == AG_OP_ESCAPE_LOG) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult escaped = ccam_heap_escape_log(machine.heap, reference);
+            if (!escaped.ok) { return ccam_aggregate_trap(machine, escaped.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(escaped.reference));
+        }
+        CCAMAggregateValueResult right = ccam_aggregate_read_ref(machine, operands[2]);
+        if (!right.ok) { return ccam_aggregate_trap(machine, right.trap); }
+        if (let other = right.value.reference) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult joined = ccam_heap_log_concat(machine.heap, reference, other);
+            if (!joined.ok) { return ccam_aggregate_trap(machine, joined.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(joined.reference));
+        }
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
 string ag_dispatch(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.trap_code != "") { return machine.trap_code; }
     if (!ag_dispatch_shape(machine, opcode, kind, operands)) {
         return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
     }
+    if (ag_schema_log_opcode(opcode)) { return ag_dispatch_log(machine, opcode, operands); }
     if (opcode >= AG_OP_TAINT && opcode <= AG_OP_TAINT_SLICE) {
         return ag_dispatch_taint_bytes(machine, opcode, operands);
     }

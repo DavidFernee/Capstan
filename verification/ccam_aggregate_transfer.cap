@@ -10,6 +10,11 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
     if (input.len() != kinds.len() || !ag_schema_operands(kinds, opcode, kind, operands)) {
         return new AGTransferResult{ok: false, ready: output};
     }
+    if (ag_schema_log_opcode(opcode)) {
+        for (int i = 1; i < operands.len(); i += 1) {
+            if (!input[operands[i]]) { return new AGTransferResult{ok: false, ready: output}; }
+        }
+    }
     if (ag_schema_taint_opcode(opcode)) {
         int first = 0;
         if (ag_schema_taint_writes(opcode)) { first = 1; }
@@ -79,7 +84,7 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
             (opcode >= AG_OP_MAP_NEW && opcode <= AG_OP_MAP_HAS) ||
             (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) ||
             opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE ||
-            (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) || ag_schema_taint_writes(opcode);
+            (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) || ag_schema_taint_writes(opcode) || ag_schema_log_opcode(opcode);
         output.push(input[i] || (writes_destination && i == operands[0]));
     }
     return new AGTransferResult{ok: true, ready: output};
@@ -107,7 +112,7 @@ AGTransferResult ag_transfer_generation(
             (opcode >= AG_OP_MAP_NEW && opcode <= AG_OP_MAP_HAS) ||
             (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) ||
             opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE ||
-            (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) || ag_schema_taint_writes(opcode);
+            (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) || ag_schema_taint_writes(opcode) || ag_schema_log_opcode(opcode);
         output.push(input[i] || (writes_destination && i == operands[0]));
     }
     return new AGTransferResult{ok: true, ready: output};
