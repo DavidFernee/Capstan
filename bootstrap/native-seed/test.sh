@@ -633,6 +633,114 @@ for start in 39 40 41 42; do
     [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
 done
 
+for index in 0 1; do
+    printf 'struct Node { int k; List<Node> pending; List<Node> kids; } int _walk(Node item, Node peer){ item.pending.push(item); item.kids.push(peer); while (item.pending.len() > 0) { Node node = item.pending[item.pending.len() - 1]; item.pending.pop(); item.kids.push(node.kids[%s]); } return item.kids[1].k; } int main(){ Node item = new Node{k: 17, pending: new List<Node>(), kids: new List<Node>()}; Node peer = new Node{k: 42, pending: new List<Node>(), kids: new List<Node>()}; return _walk(item, peer); }' "$index" |
+        compile > "$scratch/node-child"
+    chmod +x "$scratch/node-child"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/node-child" 3>"$scratch/result" || status=$?
+    if [[ "$index" == 0 ]]; then
+        [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+    else
+        [[ "$status" == 75 && ! -s "$scratch/result" ]]
+    fi
+done
+
+for destination in out kids; do
+    printf 'struct Node { int k; List<Node> pending; List<Node> kids; List<Node> out; } int _walk(Node item, Node peer){ item.pending.push(item); item.kids.push(item); item.kids.push(peer); while (item.pending.len() > 0) { Node node = item.pending[item.pending.len() - 1]; item.pending.pop(); for (int i = 0; i < node.kids.len(); i += 1) { item.%s.push(node.kids[i]); } } return item.out[1].k; } int main(){ Node item = new Node{k: 17, pending: new List<Node>(), kids: new List<Node>(), out: new List<Node>()}; Node peer = new Node{k: 42, pending: new List<Node>(), kids: new List<Node>(), out: new List<Node>()}; return _walk(item, peer); }' "$destination" |
+        compile > "$scratch/children"
+    chmod +x "$scratch/children"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/children" 3>"$scratch/result" || status=$?
+    if [[ "$destination" == out ]]; then
+        [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+    else
+        [[ "$status" == 75 && ! -s "$scratch/result" ]]
+    fi
+done
+
+printf '%s' 'struct Node { int count; List<Node> kids; } int _walk(Node item, Node peer){ List<Node> pending = new List<Node>(); item.kids.push(peer); pending.push(item); while (pending.len() > 0) { Node node = pending[pending.len() - 1]; pending.pop(); item.count += 1; for (int i = 0; i < node.kids.len(); i += 1) { pending.push(node.kids[i]); } } return item.count; } int main(){ Node item = new Node{count: 40, kids: new List<Node>()}; Node peer = new Node{count: 17, kids: new List<Node>()}; return _walk(item, peer); }' |
+    compile > "$scratch/local-worklist"
+chmod +x "$scratch/local-worklist"
+env -i PATH="$scratch/empty" "$scratch/local-worklist" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'struct Node { int count; } int _walk(Node item){ List<Node> pending = new List<Node>(); while (pending.len() > 0) { pending.pop(); } return item.count; } int main(){ Node item = new Node{count: 42}; return _walk(item); }' |
+    compile > "$scratch/local-worklist"
+env -i PATH="$scratch/empty" "$scratch/local-worklist" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'struct Node { int count; } int _walk(Node item){ pending.push(item); return item.count; } int main(){ Node item = new Node{count: 42}; return _walk(item); }' |
+    reject
+
+for mode in empty seeded; do
+    initialization=''
+    expected=40
+    if [[ "$mode" == seeded ]]; then
+        initialization='item.kids.push(item); item.kids.push(item);'
+        expected=42
+    fi
+    printf 'struct Node { int count; List<Node> kids; } int _walk(Node item, List<Node> roots){ List<Node> pending = new List<Node>(); %s for (int i = 0; i < roots.len(); i += 1) { pending.push(roots[i]); } while (pending.len() > 0) { pending.pop(); item.count += 1; } return item.count; } int main(){ Node item = new Node{count: 40, kids: new List<Node>()}; return _walk(item, item.kids); }' "$initialization" |
+        compile > "$scratch/roots"
+    chmod +x "$scratch/roots"
+    env -i PATH="$scratch/empty" "$scratch/roots" 3>"$scratch/result"
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+done
+printf '%s' 'struct Node { int count; List<Node> kids; } int _walk(Node item, List<Node> roots){ return item.count; } int main(){ Node item = new Node{count: 42, kids: new List<Node>()}; return _walk(item, item.count); }' |
+    reject
+
+for start in 40 42; do
+    printf 'const int LIMIT = 42; struct Node { int count; List<Node> kids; } bool _charge(Node item, List<Node> roots){ List<Node> pending = new List<Node>(); item.kids.push(item); for (int i = 0; i < roots.len(); i += 1) { pending.push(roots[i]); } while (pending.len() > 0) { if (item.count >= LIMIT) { return false; } item.count += 1; pending.pop(); } return true; } int main(){ Node item = new Node{count: %s, kids: new List<Node>()}; if (_charge(item, item.kids)) { return 42; } return 17; }' "$start" |
+        compile > "$scratch/bool-helper"
+    chmod +x "$scratch/bool-helper"
+    env -i PATH="$scratch/empty" "$scratch/bool-helper" 3>"$scratch/result"
+    expected=42
+    [[ "$start" != 42 ]] || expected=17
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+done
+printf '%s' 'struct Node { int count; } bool _charge(Node item){ return 1; } int main(){ Node item = new Node{count: 42}; if (_charge(item)) { return 42; } return 17; }' |
+    reject
+
+for start in 40 42; do
+    printf 'const int LIMIT = 42; struct Node { int count; bool exhausted; List<Node> kids; } bool _charge(Node item){ item.kids.push(item); while (item.kids.len() > 0) { if (item.count >= LIMIT) { item.exhausted = true; return false; } item.count += 1; item.kids.pop(); } return true; } int main(){ Node item = new Node{count: %s, exhausted: false, kids: new List<Node>()}; if (_charge(item)) { return 42; } return 17; }' "$start" |
+        compile > "$scratch/bool-guard"
+    chmod +x "$scratch/bool-guard"
+    env -i PATH="$scratch/empty" "$scratch/bool-guard" 3>"$scratch/result"
+    expected=42
+    [[ "$start" != 42 ]] || expected=17
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+done
+printf '%s' 'struct Node { int count; } bool _charge(Node item){ if (item.count >= 42) { item.count = true; return false; } return true; } int main(){ Node item = new Node{count: 42}; if (_charge(item)) { return 42; } return 17; }' |
+    reject
+
+{
+    sed -n '1,/^bool charge_ast_nodes(/p' ../../compiler/ast.cap | sed '/^CompileBudget new_compile_budget()/,/^}/d; $d'
+    printf '%s\n' 'bool _charge(CompileBudget item, List<Node> roots){ List<Node> pending = new List<Node>(); for (int i = 0; i < roots.len(); i += 1) { pending.push(roots[i]); } while (pending.len() > 0) { Node node = pending[pending.len() - 1]; pending.pop(); if (item.ast_nodes >= MAX_TOTAL_AST_NODES) { item.exhausted = true; return false; } item.ast_nodes += 1; for (int i = 0; i < node.kids.len(); i += 1) { pending.push(node.kids[i]); } } return true; }'
+    printf '%s\n' 'int main(){ CompileBudget item = new CompileBudget{source_bytes: 0, tokens: 0, ast_nodes: MAX_TOTAL_AST_NODES, files: 0, exhausted: false}; if (_charge(item, new List<Node>())) { return 42; } return 17; }'
+} | compile > "$scratch/distinct-root"
+chmod +x "$scratch/distinct-root"
+env -i PATH="$scratch/empty" "$scratch/distinct-root" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'struct Budget { int count; } struct Node { int k; List<Node> kids; } bool _charge(Budget item, List<Node> roots){ return true; } int main(){ Budget item = new Budget{count: 42}; if (_charge(item, new List<Budget>())) { return 42; } return 17; }' |
+    reject
+printf '%s' 'struct Ref { int n; } struct Holder { Ref? optional; } int main(){ Holder item = new Holder{optional: true}; return item.optional.len(); }' |
+    reject
+
+printf '%s' 'struct Budget { int count; } struct Node { int k; List<Node> kids; } bool _charge(Budget item, List<Node> roots){ List<Node> pending = new List<Node>(); pending.push(item); return true; } int main(){ Budget item = new Budget{count: 42}; if (_charge(item, new List<Node>())) { return 42; } return 17; }' |
+    reject
+
+for budget in 149999 150000; do
+    {
+        sed -n '1,/^bool charge_ast_nodes(/p' ../../compiler/ast.cap | sed '/^CompileBudget new_compile_budget()/,/^}/d; $d'
+        sed -n '/^bool charge_ast_nodes(/,/^}/p' ../../compiler/ast.cap
+        printf 'int main(){ CompileBudget item = new CompileBudget{source_bytes: 0, tokens: 0, ast_nodes: %s, files: 0, exhausted: false}; ' "$budget"
+        printf '%s\n' 'Node peer = new Node{k: N_NONE, s: "", s2: "", s3: "", n: 0, binding_id: 0, line: 0, col: 0, file: 0, kids: new List<Node>(), ty: none}; List<Node> roots = new List<Node>(); roots.push(peer); if (charge_ast_nodes(item, roots)) { return 42; } return 17; }'
+    } | compile > "$scratch/nonempty-distinct-roots"
+    chmod +x "$scratch/nonempty-distinct-roots"
+    env -i PATH="$scratch/empty" "$scratch/nonempty-distinct-roots" 3>"$scratch/result"
+    expected=42
+    [[ "$budget" != 150000 ]] || expected=17
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+done
+
 # Distinguish a broken input channel from a malformed source, and check
 # that transport failures cannot be mistaken for a successful compile/run.
 status=0
@@ -644,6 +752,13 @@ printf '%s' "$source" | compile > /dev/full || status=$?
 status=0
 env -i PATH="$scratch/empty" "$scratch/program" 3>&- || status=$?
 [[ "$status" == 1 ]]
+
+as --64 charge-ast-nodes.S -o "$scratch/charge.o"
+as --64 charge-ast-nodes-test.S -o "$scratch/charge-test.o"
+ld -static -nostdlib -s "$scratch/charge-test.o" "$scratch/charge.o" -o "$scratch/charge-test"
+check_static "$scratch/charge-test"
+env -i PATH="$scratch/empty" "$scratch/charge-test" > "$scratch/charge-results"
+[[ "$(wc -c < "$scratch/charge-results")" == 72 ]]
 
 sha256sum "$scratch/first"
 printf 'Native seed and ELF fixtures passed.\n'
