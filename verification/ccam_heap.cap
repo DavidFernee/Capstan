@@ -1337,3 +1337,49 @@ test "candidate list growth preserves identity and rejects growth atomically at 
     assert(!ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 0).ok);
     assert(heap.bytes_used == before);
 }
+
+test "candidate typed map compares byte contents and updates existing entries at capacity" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 16);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_INT, 1);
+    CCAMHeapRefResult first = ccam_heap_alloc_bytes(heap, "node");
+    CCAMHeapRefResult equal_key = ccam_heap_alloc_bytes(heap, "node");
+    CCAMHeapRefResult different = ccam_heap_alloc_bytes(heap, "Node");
+    assert(map.ok && first.ok && equal_key.ok && different.ok);
+    CCAMHeapValue key = ccam_heap_ref_value(first.reference);
+    CCAMHeapValue same = ccam_heap_ref_value(equal_key.reference);
+    CCAMHeapValue other = ccam_heap_ref_value(different.reference);
+    assert(!ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, key).found);
+    CCAMHeapValue payload = ccam_heap_int(0);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, key, payload) == "");
+    payload.int_value = 99;
+    CCAMMapLookup present = ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, same);
+    assert(present.ok && present.found && present.value.int_value == 0);
+    present.value.int_value = 88;
+    assert(ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, key).value.int_value == 0);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, same, ccam_heap_int(42)) == "");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, other, ccam_heap_int(9)) == "map_capacity");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, key, ccam_heap_bool(true)) == "value_type_mismatch");
+    assert(ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, key).value.int_value == 42);
+    CCAMMapLookup missing = ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, other);
+    assert(missing.ok && !missing.found);
+    assert(!ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_BOOL, key).ok);
+}
+
+test "candidate map charges search work before mutation" {
+    CCAMHeapCreateResult created = ccam_heap_create_bounded(4096, 16, 7, 4096);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_BOOL, 1);
+    CCAMHeapRefResult key_ref = ccam_heap_alloc_bytes(heap, "x");
+    assert(map.ok && key_ref.ok);
+    CCAMHeapValue key = ccam_heap_ref_value(key_ref.reference);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_BOOL, key, ccam_heap_bool(false)) == "");
+    int before = heap.work_used;
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_BOOL, key, ccam_heap_bool(true)) == "work_limit");
+    assert(heap.work_used == before);
+    int index = ccam_heap_object_index(heap, map.reference);
+    assert(index >= 0 && heap.objects[index].length == 1);
+    assert(!heap.objects[index].elements[0].bool_value);
+}
