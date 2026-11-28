@@ -54,6 +54,14 @@ AGImage ag_nv_compile_checked(Ctx ctx, List<Node> declarations, int fuel) {
 // Multi-function variant. Reuse the checked source lowering, with stable
 // source-order IDs. Preserve exact nominal signatures for call boundaries.
 AGImage ag_nvc_compile_checked(Ctx ctx, List<Node> declarations, int fuel, int depth) {
+    return ag_nvc_compile_checked_entry(ctx, declarations, fuel, depth, false);
+}
+
+AGImage ag_nvc_compile_checked_process(Ctx ctx, List<Node> declarations, int fuel, int depth) {
+    return ag_nvc_compile_checked_entry(ctx, declarations, fuel, depth, true);
+}
+
+AGImage ag_nvc_compile_checked_entry(Ctx ctx, List<Node> declarations, int fuel, int depth, bool process_args) {
     if (error_count(ctx) != 0 || declarations.len() == 0 ||
         declarations.len() > 256 + AG_NVC_MAX_FUNCTIONS + AG_NV_MAX_CONSTANTS) { return ag_nv_failure(); }
     Map<int> records = new Map<int>(); Map<Node> record_nodes = new Map<Node>();
@@ -106,5 +114,5 @@ AGImage ag_nvc_compile_checked(Ctx ctx, List<Node> declarations, int fuel, int d
             } else { return ag_nv_failure(); }
         }
     }
-    return ag_nvc_compile_typed(functions, signatures, entry, fuel, depth);
+    return ag_nvc_compile_entry(functions, signatures, entry, fuel, depth, process_args);
 }
