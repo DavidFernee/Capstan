@@ -28,6 +28,8 @@ def main():
         'list-empty': 0, 'list-over': None, 'list-oob': None, 'list-negative': None,
         'list-string': 108, 'list-reference': 42,
         'list-reference-oob': None, 'list-reference-mismatch': None,
+        'opt-scalar': 7, 'opt-record': 42, 'opt-string': 3, 'opt-absent': 42,
+        'opt-unwrap-none': None, 'opt-mismatch': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
