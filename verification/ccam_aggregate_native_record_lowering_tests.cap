@@ -79,3 +79,46 @@ test "candidate native admission rejects invalid budgets and unsupported source"
     AGImage invalid = ag_nv_compile(f, 100);
     assert(!invalid.ok && invalid.bytes.len() == 0);
 }
+
+AGImage ag_nvc_test_source(string text, int fuel, int depth) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("native-calls.cap");
+    Tainted source = taint(text); ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) == 0) { check_program(new_checker(ctx), declarations, false); }
+    return ag_nvc_compile_checked(ctx, declarations, fuel, depth);
+}
+
+test "candidate native nested scalar calls preserve argument order caller slots and void results" {
+    string source = "int pair(int a, int b) { return a * 10 + b; } " +
+        "bool choose(int a, int b) { return a < b; } " +
+        "void empty() { } " +
+        "int run() { int x = 2; int y = 3; empty(); " +
+        "if (choose(x, y)) { return pair(pair(x, y), x) + y; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-calls.elf"));
+}
+
+test "candidate native recursion observes exact active frame ceiling and shared fuel" {
+    string source = "int fact(int n) { if (n <= 1) { return 1; } return n * fact(n - 1); } " +
+        "int run() { return fact(5); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 6), "build/ccam-native-record-recursion.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 5), "build/ccam-native-record-depth.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 3, 6), "build/ccam-native-record-callfuel.elf"));
+}
+
+test "candidate native direct calls preserve local record identity across scalar call" {
+    string source = "struct Budget { int n; } " +
+        "int twice(int x) { Budget local = new Budget{n: x}; return local.n * 2; } " +
+        "int run() { Budget budget = new Budget{n: 21}; int result = twice(budget.n); return result + budget.n; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-local-record.elf"));
+}
+
+test "candidate native direct calls reject unsupported reference boundaries and invalid budgets" {
+    string source = "struct Budget { int n; } int read(Budget value) { return value.n; } " +
+        "int run() { Budget b = new Budget{n: 1}; return read(b); }";
+    AGImage rejected = ag_nvc_test_source(source, 100, 8);
+    assert(!rejected.ok && rejected.bytes.len() == 0);
+    assert(!ag_nvc_test_source("int run() { return 1; }", 100, 0).ok);
+    assert(!ag_nvc_test_source("int run() { return 1; }", 100, 33).ok);
+}
