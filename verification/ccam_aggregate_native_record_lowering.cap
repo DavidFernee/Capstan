@@ -1,8 +1,8 @@
 // Candidate checked AGFunction -> Linux x86-64 ELF. Not canonical native CCAM.
-// Only zero-argument, int-result functions, closed scalar and mixed-record
-// instructions. All reference values originate in allocation or reference
-// moves; headers are immutable, arena lifetime is one process invocation.
-// No calls, external references, collection types, GC or source ABI claim.
+// Only zero-argument, int-result functions, closed scalar, mixed-record and immutable byte-string instructions.
+// Reference values originate in allocation or checked reference operations;
+// headers are immutable, arena lifetime is one process invocation.
+// No calls in this entry, external references, mutable collections, GC or source ABI claim.
 // Result transport: one little-endian signed 64-bit stdout word, exit 0.
 // Any runtime rejection exits 1 without a language result; I/O errors may
 // have written a prefix. This is a test interface, not private transport.
