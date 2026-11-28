@@ -163,7 +163,9 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
                         if (op[1] != -1 && (op[1] < 1 || op[1] >= AG_NV_RECORD_LIMIT)) { return false; }
                     } else if (op[1] != 0) { return false; }
                 }
-            } else if (ins.opcode >= AG_OP_MAP_NEW && ins.opcode <= AG_OP_MAP_SET) {
+            } else if (ins.opcode == AG_OP_MAP_KEYS) {
+                if (ag_nv_map_tag(op[2]) == 0) { return false; }
+            } else if ((ins.opcode >= AG_OP_MAP_NEW && ins.opcode <= AG_OP_MAP_SET) || ins.opcode == AG_OP_MAP_REMOVE) {
                 int descriptor = op[1];
                 if (ins.opcode != AG_OP_MAP_NEW) { descriptor = op[3]; }
                 if (ag_nv_map_tag(descriptor) == 0) { return false; }
@@ -513,7 +515,8 @@ bool ag_nv_optional_instruction(AGNVContext c, AGBlockInstruction ins) {
 bool ag_nv_map_instruction(AGNVContext c, AGBlockInstruction ins) {
     List<int> b = c.code; List<int> a = ins.operands;
     int descriptor = a[1];
-    if (ins.opcode != AG_OP_MAP_NEW) { descriptor = a[3]; }
+    if (ins.opcode == AG_OP_MAP_KEYS) { descriptor = a[2]; }
+    else if (ins.opcode != AG_OP_MAP_NEW) { descriptor = a[3]; }
     int tag = ag_nv_map_tag(descriptor);
     if (tag == 0 || b.len() > AG_BYTE_LIMIT - 320) { return false; }
     if (ins.opcode == AG_OP_MAP_NEW) {
@@ -523,12 +526,18 @@ bool ag_nv_map_instruction(AGNVContext c, AGBlockInstruction ins) {
         if (!ag_u32(b, 1)) { return false; }
         return ag_nv_slot(b, true, 0, a[0]);
     }
+    if (ins.opcode == AG_OP_MAP_KEYS) {
+        return ag_nv_slot(b, false, 0, a[1]) &&
+            ag_nv_reference(c, AG_NV_MAP_BASE + descriptor) &&
+            ag_nv_call(c, c.trap + 14) && ag_nv_slot(b, true, 0, a[0]);
+    }
     int map_reg = a[1]; int key_reg = a[2]; int mode = 0;
     if (ins.opcode == AG_OP_MAP_SET) {
         map_reg = a[0]; key_reg = a[1]; mode = 2;
         if (!ag_nv_slot(b, false, 0, a[2]) ||
             !ag_nv_field_value(c, ins.kind, ag_nv_optional_payload_descriptor(descriptor))) { return false; }
     } else if (ins.opcode == AG_OP_MAP_GET) { mode = 1; }
+    else if (ins.opcode == AG_OP_MAP_REMOVE) { mode = 3; }
     else if (ins.opcode != AG_OP_MAP_HAS) { return false; }
     if (!ag_nv_slot(b, false, 0, key_reg) || !ag_nv_reference(c, AG_NV_BYTES_DESCRIPTOR) ||
         !ag_nv_slot(b, false, 0, map_reg) || !ag_nv_reference(c, AG_NV_MAP_BASE + descriptor) ||
@@ -550,7 +559,7 @@ bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (op == 5 || op == 1 || op == 2 || op == 3 || op == AG_OP_LIST_PUSH || op == AG_OP_LIST_POP_DISCARD) {
         return ag_nv_list_instruction(c, ins);
     }
-    if (op >= AG_OP_MAP_NEW && op <= AG_OP_MAP_SET) {
+    if ((op >= AG_OP_MAP_NEW && op <= AG_OP_MAP_SET) || op == AG_OP_MAP_KEYS || op == AG_OP_MAP_REMOVE) {
         return ag_nv_map_instruction(c, ins);
     }
     if (op >= AG_OP_OPT_NONE && op <= AG_OP_OPT_UNWRAP) {
@@ -649,7 +658,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     int count = f.blocks.len();
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 14; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 15; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Stack frame: one slot per register and one private return word.
     b.push(72); b.push(129); b.push(236);
@@ -689,7 +698,9 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     c.labels[count + 10] = b.len(); if (!ag_nv_emit_bytes_conversion(b)) { return ag_nv_failure(); }
     c.labels[count + 11] = b.len(); if (!ag_nv_emit_scalar_list(b)) { return ag_nv_failure(); }
     c.labels[count + 12] = b.len(); if (!ag_nv_emit_reference_list(b)) { return ag_nv_failure(); }
-    c.labels[count + 13] = b.len(); if (!ag_nv_emit_map(b)) { return ag_nv_failure(); }
+    c.labels[count + 13] = b.len();
+    c.labels[count + 14] = b.len() + AG_NV_MAP_KEYS_OFFSET;
+    if (!ag_nv_emit_map(b)) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
         if (!ag_rel32(b, c.patches[i], c.labels[c.targets[i]])) { return ag_nv_failure(); }
     }
