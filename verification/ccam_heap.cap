@@ -218,6 +218,93 @@ bool ccam_heap_value_is_bytes(CCAMHeap heap, CCAMHeapValue value) {
     return false;
 }
 
+// Candidate immutable optional boxes. Their object kind is distinct from
+// ordinary records, so a record with the same numeric ID cannot impersonate one.
+const int CCAM_HEAP_OBJECT_OPTIONAL = 4;
+const int AG_OPTIONAL_RECORD_MAX = 4096;
+const int AG_OPTIONAL_INT = 8193;
+const int AG_OPTIONAL_BOOL = 8194;
+const int AG_OPTIONAL_BYTES = 8195;
+const int AG_OPTIONAL_RECORD_BASE = 10000;
+
+bool ccam_heap_optional_descriptor(int descriptor) {
+    return descriptor == AG_OPTIONAL_INT || descriptor == AG_OPTIONAL_BOOL ||
+        descriptor == AG_OPTIONAL_BYTES ||
+        (descriptor > AG_OPTIONAL_RECORD_BASE &&
+         descriptor <= AG_OPTIONAL_RECORD_BASE + AG_OPTIONAL_RECORD_MAX);
+}
+
+int ccam_heap_optional_payload_kind(int descriptor) {
+    if (descriptor == AG_OPTIONAL_INT) { return CCAM_HEAP_VALUE_INT; }
+    if (descriptor == AG_OPTIONAL_BOOL) { return CCAM_HEAP_VALUE_BOOL; }
+    if (ccam_heap_optional_descriptor(descriptor)) { return CCAM_HEAP_VALUE_REF; }
+    return 0;
+}
+
+bool ccam_heap_optional_payload_matches(CCAMHeap heap, int descriptor, CCAMHeapValue payload) {
+    if (descriptor == AG_OPTIONAL_INT) { return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_INT, 0); }
+    if (descriptor == AG_OPTIONAL_BOOL) { return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_BOOL, 0); }
+    if (descriptor == AG_OPTIONAL_BYTES) { return ccam_heap_value_is_bytes(heap, payload); }
+    if (descriptor > AG_OPTIONAL_RECORD_BASE &&
+        descriptor <= AG_OPTIONAL_RECORD_BASE + AG_OPTIONAL_RECORD_MAX) {
+        return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_REF, descriptor - AG_OPTIONAL_RECORD_BASE);
+    }
+    return false;
+}
+
+CCAMHeapRefResult ccam_heap_alloc_optional(CCAMHeap heap, int descriptor, bool present, CCAMHeapValue payload) {
+    if (!ccam_heap_optional_descriptor(descriptor) ||
+        (present && !ccam_heap_optional_payload_matches(heap, descriptor, payload))) {
+        return ccam_heap_ref_error("optional_payload_mismatch");
+    }
+    int charge = CCAM_HEAP_RECORD_HEADER_BYTES + CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(heap, charge, 2, CCAM_HEAP_SLOT_BYTES);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    List<CCAMHeapValue> fields = new List<CCAMHeapValue>();
+    List<bool> ready = new List<bool>();
+    if (present) { fields.push(payload); } else { fields.push(ccam_heap_int(0)); }
+    ready.push(present);
+    int id = heap.next_id;
+    CCAMHeapObject object = new CCAMHeapObject{id: id, kind: CCAM_HEAP_OBJECT_OPTIONAL,
+        descriptor_id: descriptor, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>(),
+        fields: fields, field_initialised: ready, element_type: 0, element_ref_type_id: 0,
+        capacity: 0, length: 0, elements: new List<CCAMHeapValue>(),
+        element_initialised: new List<bool>(), byte_data: ""};
+    heap.objects.push(object);
+    heap.bytes_used += charge;
+    heap.work_used += 2;
+    heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, CCAM_HEAP_SLOT_BYTES);
+    heap.next_id += 1;
+    return new CCAMHeapRefResult{ok: true,
+        reference: new CCAMHeapRef{identity: heap.identity, object_id: id}, trap: ""};
+}
+
+bool ccam_heap_optional_matches(CCAMHeap heap, CCAMHeapValue value, int descriptor) {
+    if (value.kind != CCAM_HEAP_VALUE_REF || !ccam_heap_optional_descriptor(descriptor)) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        if (index < 0) { return false; }
+        CCAMHeapObject object = heap.objects[index];
+        return object.kind == CCAM_HEAP_OBJECT_OPTIONAL && object.descriptor_id == descriptor &&
+            object.fields.len() == 1 && object.field_initialised.len() == 1 &&
+            (!object.field_initialised[0] || ccam_heap_optional_payload_matches(heap, descriptor, object.fields[0]));
+    }
+    return false;
+}
+
+CCAMHeapValueResult ccam_heap_optional_read(CCAMHeap heap, CCAMHeapValue value, int descriptor, bool unwrap) {
+    if (!ccam_heap_optional_matches(heap, value, descriptor)) { return ccam_heap_value_error("optional_shape_mismatch"); }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        CCAMHeapObject object = heap.objects[index];
+        if (!unwrap) { return ccam_heap_value_ok(ccam_heap_bool(object.field_initialised[0])); }
+        if (!object.field_initialised[0]) { return ccam_heap_value_error("optional_absent"); }
+        return ccam_heap_value_ok(object.fields[0]);
+    }
+    return ccam_heap_value_error("invalid_reference");
+}
+
 public policy CCAMHeapIdentityBound(CCAMHeapIdentity identity) { return true; }
 
 protected(CCAMHeapIdentityBound) void ccam_heap_require_identity(
