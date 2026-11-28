@@ -1,0 +1,82 @@
+import "schooner_concurrency.cap";
+
+// An event-history oracle: timestamps record only successfully admitted
+// actions. Reconstruct abstract state from the history rather than calling
+// the model's invariant, rank or exploration routines.
+bool assurance_schedule(List<int> actions) {
+    List<int> seen = new List<int>();
+    for (int i = 0; i < 6; i += 1) { seen.push(0); }
+    SCCState state = scc_initial();
+    bool acquired = false;
+    for (int i = 0; i < actions.len(); i += 1) {
+        int action = actions[i];
+        int index = action - 1;
+        bool expected = seen[index] == 0;
+        if (action == SCC_ACCESS_ACQUIRE) {
+            expected = expected && seen[0] > 0;
+        } else if (action == SCC_ACCESS_FINISH) {
+            expected = expected && acquired;
+        } else if (action == SCC_REVOKE_COMMIT) {
+            expected = expected && seen[3] > 0;
+        } else if (action == SCC_REVOKE_RETURN) {
+            expected = expected && seen[4] > 0 && (!acquired || seen[2] > 0);
+        }
+        SCCStep result = scc_step(state, action);
+        if (result.enabled != expected) { return false; }
+        if (expected) {
+            seen[index] = i + 1;
+            if (action == SCC_ACCESS_ACQUIRE) { acquired = seen[4] == 0; }
+        }
+        int access = SCC_ACCESS_NONE;
+        if (seen[0] > 0) { access = SCC_ACCESS_INVOKED; }
+        if (seen[1] > 0) {
+            access = SCC_ACCESS_REJECTED;
+            if (acquired) { access = SCC_ACCESS_PINNED; }
+        }
+        if (seen[2] > 0) { access = SCC_ACCESS_SUCCEEDED; }
+        int revoke = SCC_REVOKE_NONE;
+        if (seen[3] > 0) { revoke = SCC_REVOKE_INVOKED; }
+        if (seen[4] > 0) { revoke = SCC_REVOKE_COMMITTED; }
+        if (seen[5] > 0) { revoke = SCC_REVOKE_RETURNED; }
+        int pins = 0;
+        if (acquired && seen[2] == 0) { pins = 1; }
+        int epoch = 1;
+        if (seen[4] > 0) { epoch = 2; }
+        SCCState next = result.next;
+        if (next.access_status != access || next.revoke_status != revoke ||
+            next.in_flight != pins || next.epoch != epoch ||
+            next.gate_open != (seen[4] == 0) || next.revoked != (seen[4] > 0) ||
+            next.reclaimed != (seen[5] > 0)) { return false; }
+        state = next;
+    }
+    return true;
+}
+
+test "revocation schedule all length-four histories including repeated events" {
+    for (int schedule = 0; schedule < 1296; schedule += 1) {
+        List<int> actions = new List<int>();
+        int encoded = schedule;
+        for (int i = 0; i < 4; i += 1) {
+            actions.push(1 + encoded % 6); encoded = encoded / 6;
+        }
+        assert(assurance_schedule(actions));
+    }
+}
+
+test "revocation schedule every permutation of six distinct events" {
+    for (int encoded = 0; encoded < 46656; encoded += 1) {
+        int digits = encoded;
+        List<int> actions = new List<int>();
+        List<bool> used = new List<bool>();
+        for (int i = 0; i < 6; i += 1) { used.push(false); }
+        bool unique = true;
+        for (int i = 0; i < 6; i += 1) {
+            int index = digits % 6;
+            digits = digits / 6;
+            if (used[index]) { unique = false; }
+            used[index] = true;
+            actions.push(index + 1);
+        }
+        if (unique) { assert(assurance_schedule(actions)); }
+    }
+}
