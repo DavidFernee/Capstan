@@ -2,7 +2,7 @@
 // All declarations checked by the production checker, one entry function,
 // scalar-record structs only; unsupported declarations rejected, not ignored.
 import "ccam_aggregate_checked_source.cap";
-import "ccam_aggregate_native_record_lowering.cap";
+import "ccam_aggregate_native_direct_calls.cap";
 
 AGSourceFunction? ag_nv_checked_entry(Ctx ctx, List<Node> declarations) {
     if (error_count(ctx) != 0 || declarations.len() == 0 ||
@@ -33,4 +33,44 @@ AGImage ag_nv_compile_checked(Ctx ctx, List<Node> declarations, int fuel) {
         return ag_nv_compile(entry.function, fuel);
     }
     return ag_nv_failure();
+}
+
+// Multi-function variant. Reuse the checked source lowering, with stable
+// source-order IDs. Preserve exact nominal signatures for call boundaries.
+AGImage ag_nvc_compile_checked(Ctx ctx, List<Node> declarations, int fuel, int depth) {
+    if (error_count(ctx) != 0 || declarations.len() == 0 ||
+        declarations.len() > 256 + AG_NVC_MAX_FUNCTIONS) { return ag_nv_failure(); }
+    Map<int> records = new Map<int>(); Map<Node> record_nodes = new Map<Node>();
+    Map<Node> constants = new Map<Node>(); Map<Node> function_nodes = new Map<Node>();
+    Map<int> indices = new Map<int>(); Map<int> names = new Map<int>();
+    int record_count = 0; int count = 0; int entry = -1; int fields = 0;
+    for (int i = 0; i < declarations.len(); i += 1) {
+        Node d = declarations[i];
+        if (d.s.len() == 0 || d.s.len() > AG_SOURCE_MAX_NAME || names.has(d.s)) { return ag_nv_failure(); }
+        names.set(d.s, 1);
+        if (d.k == N_STRUCT) {
+            if (record_count >= 256 || d.s2 != "" || d.s3 != "" ||
+                d.kids.len() > AG_SCHEMA_MAX_RECORD_FIELDS ||
+                d.kids.len() > AG_NV_MAX_OPERANDS - fields) { return ag_nv_failure(); }
+            fields += d.kids.len(); record_count += 1;
+            records.set(d.s, record_count); record_nodes.set(d.s, d);
+        } else if (d.k == N_FN) {
+            if (count >= AG_NVC_MAX_FUNCTIONS) { return ag_nv_failure(); }
+            if (d.s == "run") { entry = count; }
+            indices.set(d.s, count); function_nodes.set(d.s, d); count += 1;
+        } else { return ag_nv_failure(); }
+    }
+    if (entry < 0) { return ag_nv_failure(); }
+    List<AGFunction> functions = new List<AGFunction>();
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
+    for (int i = 0; i < declarations.len(); i += 1) {
+        Node d = declarations[i];
+        if (d.k == N_FN) {
+            if (let lowered = ag_source_lower_function(d, records, record_nodes, constants, function_nodes, indices)) {
+                functions.push(lowered.function);
+                signatures.push(lowered.signature);
+            } else { return ag_nv_failure(); }
+        }
+    }
+    return ag_nvc_compile_typed(functions, signatures, entry, fuel, depth);
 }

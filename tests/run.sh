@@ -166,6 +166,34 @@ else
   bad "bounded native record membership guard emission" "$out"
 fi
 
+section "Candidate native scalar string conversions"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
+  ok "bounded native scalar string conversion emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_string_conversion.py" "$ROOT/build/ccam-native-string-conversion.bin" 2>&1)"; then
+      ok "native scalar string conversion differential execution"
+    else
+      bad "native scalar string conversion execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native scalar string conversion emission" "$out"
+fi
+
+section "Candidate native scalar lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_scalar_list.cap" 2>&1)"; then
+  ok "bounded native scalar list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_list.py" "$ROOT/build/ccam-native-scalar-list.bin" 2>&1)"; then
+      ok "native scalar list differential and boundary execution"
+    else
+      bad "native scalar list execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native scalar list emission" "$out"
+fi
+
 section "Candidate native scalar record CFG lowering"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_native_record_lowering_tests.cap" 2>&1)"; then
   ok "checked scalar record CFG to direct native ELF"
