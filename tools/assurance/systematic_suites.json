@@ -91,6 +91,14 @@
     [
       "python3",
       "tools/assurance/trace_capability_decision.py"
+    ],
+    [
+      "python3",
+      "tools/assurance/test_trace_memory_storage_decisions.py"
+    ],
+    [
+      "python3",
+      "tools/assurance/trace_memory_storage_decisions.py"
     ]
   ],
   "native": [
