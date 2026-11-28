@@ -17,6 +17,34 @@ string ag_invoke(AGStack stack, List<AGFunction> functions, int id, List<int> ar
     return ag_stack_return(stack, result.return_register);
 }
 
+// The nominal contract is supplied by the trusted compiler/controller.
+// Require exact agreement with the coarse function signature before admission.
+string ag_nominal_invoke(AGStack stack, List<AGFunction> functions, int id,
+    AGNominalSignature signature, List<int> arguments, int destination) {
+    if (id < 0 || id >= functions.len() || !ag_program_validate(functions) ||
+        !ag_nominal_signature(signature)) {
+        return ccam_aggregate_trap(stack.active, "invalid_function");
+    }
+    AGFunction f = functions[id];
+    if (f.signature.result_kind != signature.coarse.result_kind ||
+        f.signature.parameters.len() != signature.coarse.parameters.len()) {
+        return ccam_aggregate_trap(stack.active, "invalid_call");
+    }
+    for (int i = 0; i < f.signature.parameters.len(); i += 1) {
+        if (f.signature.parameters[i] != signature.coarse.parameters[i]) {
+            return ccam_aggregate_trap(stack.active, "invalid_call");
+        }
+    }
+    string error = ag_stack_nominal_call(stack, signature, f.kinds, arguments, destination);
+    if (error != "") { return error; }
+    AGExecutionResult result = ag_execute_function(stack.active, functions, id);
+    if (!result.ok) {
+        ccam_aggregate_trap(stack.active, result.error);
+        return ag_stack_return(stack, -1);
+    }
+    return ag_stack_return(stack, result.return_register);
+}
+
 test "aggregate invoke transfers the declared return register to caller" {
     List<int> root_kinds = new List<int>();
     root_kinds.push(AG_SCHEMA_INT);
